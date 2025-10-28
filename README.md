@@ -25,7 +25,7 @@ Zebra yazıcılar için Flutter paketi. Bluetooth bağlantısı ve ZPL gönderim
 
 ```yaml
 dependencies:
-  zebra_printer: ^0.1.1
+  zebra_printer: latest_version
 ```
 
 ### Android Kurulumu
