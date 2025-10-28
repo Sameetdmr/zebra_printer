@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+* README dosyası güncellendi
+* pub.dev rozetleri eklendi
+* Versiyon bilgisi güncellendi
+
 ## 0.1.1
 
 * GitHub repository bilgileri güncellendi
