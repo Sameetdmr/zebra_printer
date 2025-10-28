@@ -1,6 +1,6 @@
 name: zebra_printer
 description: Zebra yazıcılar için Flutter yönetim paketi. Bluetooth bağlantısı ve ZPL gönderimi için Zebra Link-OS SDK kullanır.
-version: 0.1.2
+version: 0.1.3
 homepage: https://github.com/Sameetdmr/zebra_printer
 repository: https://github.com/Sameetdmr/zebra_printer
 issue_tracker: https://github.com/Sameetdmr/zebra_printer/issues

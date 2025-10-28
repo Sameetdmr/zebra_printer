@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3
+
+* Example uygulaması eklendi
+* Paket yapısı iyileştirildi
+
 ## 0.1.2
 
 * README dosyası güncellendi
