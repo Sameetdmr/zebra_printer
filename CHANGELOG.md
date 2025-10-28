@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+* Example uygulaması kod formatı iyileştirildi
+
 ## 0.1.3
 
 * Example uygulaması eklendi
