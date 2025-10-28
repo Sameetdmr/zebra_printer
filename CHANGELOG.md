@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+* GitHub repository bilgileri güncellendi
+* Paket adı düzeltildi (com.example -> com.sameetdmr)
+
 ## 0.1.0
 
 * İlk sürüm
