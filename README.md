@@ -1,6 +1,11 @@
 # Zebra Printer
 
 [![pub package](https://img.shields.io/pub/v/zebra_printer.svg)](https://pub.dev/packages/zebra_printer)
+[![Pub Version (including pre-releases)](https://img.shields.io/pub/v/zebra_printer?include_prereleases)](https://pub.dev/packages/zebra_printer)
+[![pub publisher](https://img.shields.io/pub/publisher/zebra_printer)](https://pub.dev/packages/zebra_printer)
+[![Pub Likes](https://img.shields.io/pub/likes/zebra_printer)](https://pub.dev/packages/zebra_printer/score)
+[![Pub Popularity](https://img.shields.io/pub/popularity/zebra_printer)](https://pub.dev/packages/zebra_printer/score)
+[![Pub Points](https://img.shields.io/pub/points/zebra_printer)](https://pub.dev/packages/zebra_printer/score)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Zebra yazıcılar için Flutter paketi. Bluetooth bağlantısı ve ZPL gönderimi için kullanılır. Zebra Link-OS SDK'sını kullanarak Zebra yazıcılarla iletişim kurmanızı sağlar.
@@ -20,7 +25,7 @@ Zebra yazıcılar için Flutter paketi. Bluetooth bağlantısı ve ZPL gönderim
 
 ```yaml
 dependencies:
-  zebra_printer: ^0.1.0
+  zebra_printer: ^0.1.1
 ```
 
 ### Android Kurulumu
