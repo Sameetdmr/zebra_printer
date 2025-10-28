@@ -10,14 +10,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Zebra Printer Demo',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
-      ),
-      home: const MyHomePage(title: 'Zebra Printer Demo'),
-    );
+    return MaterialApp(title: 'Zebra Printer Demo', theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue), useMaterial3: true), home: const MyHomePage(title: 'Zebra Printer Demo'));
   }
 }
 
@@ -33,7 +26,7 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   final BluetoothManager _bluetoothManager = BluetoothManager();
   final PrinterManager _printerManager = PrinterManager();
-  
+
   List<BluetoothDevice> _devices = [];
   BluetoothDevice? _selectedDevice;
   bool _isScanning = false;
@@ -204,47 +197,22 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(widget.title),
-      ),
+      appBar: AppBar(backgroundColor: Theme.of(context).colorScheme.inversePrimary, title: Text(widget.title)),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text(
-              'Durum: $_status',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
+          Padding(padding: const EdgeInsets.all(8.0), child: Text('Durum: $_status', style: const TextStyle(fontWeight: FontWeight.bold))),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              ElevatedButton(
-                onPressed: _isScanning ? _stopScan : _scanDevices,
-                child: Text(_isScanning ? 'Taramayı Durdur' : 'Cihazları Tara'),
-              ),
-              if (_bluetoothManager.isConnected)
-                ElevatedButton(
-                  onPressed: _disconnect,
-                  child: const Text('Bağlantıyı Kes'),
-                ),
+              ElevatedButton(onPressed: _isScanning ? _stopScan : _scanDevices, child: Text(_isScanning ? 'Taramayı Durdur' : 'Cihazları Tara')),
+              if (_bluetoothManager.isConnected) ElevatedButton(onPressed: _disconnect, child: const Text('Bağlantıyı Kes')),
             ],
           ),
           const Divider(),
           if (_bluetoothManager.isConnected) ...[
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                ElevatedButton(
-                  onPressed: _printTestLabel,
-                  child: const Text('Test Etiketi Yazdır'),
-                ),
-                ElevatedButton(
-                  onPressed: _checkPrinterStatus,
-                  child: const Text('Yazıcı Durumunu Kontrol Et'),
-                ),
-              ],
+              children: [ElevatedButton(onPressed: _printTestLabel, child: const Text('Test Etiketi Yazdır')), ElevatedButton(onPressed: _checkPrinterStatus, child: const Text('Yazıcı Durumunu Kontrol Et'))],
             ),
             const Divider(),
           ],
@@ -254,13 +222,11 @@ class _MyHomePageState extends State<MyHomePage> {
               itemBuilder: (context, index) {
                 final device = _devices[index];
                 final bool isConnected = device.address == _bluetoothManager.connectedDevice?.address;
-                
+
                 return ListTile(
                   title: Text(device.name ?? 'İsimsiz Cihaz'),
                   subtitle: Text(device.address),
-                  trailing: isConnected 
-                    ? const Icon(Icons.bluetooth_connected, color: Colors.green)
-                    : const Icon(Icons.bluetooth),
+                  trailing: isConnected ? const Icon(Icons.bluetooth_connected, color: Colors.green) : const Icon(Icons.bluetooth),
                   selected: isConnected,
                   onTap: isConnected ? null : () => _connectToDevice(device),
                 );
