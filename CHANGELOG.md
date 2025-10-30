@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.6
+
+* Paket güncellemesi
+* Performans iyileştirmeleri
+
 ## 0.1.5
 
 * Eksik dosyalar eklendi
