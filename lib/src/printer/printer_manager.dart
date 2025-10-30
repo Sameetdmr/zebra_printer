@@ -26,8 +26,16 @@ class PrinterManager {
       throw Exception("MAC adresi boş olamaz.");
     }
     try {
-      const String initCommands = "^XA~JA~JSN";
-      final String finalZplToSend = "$initCommands^CI28$zplData^XZ";
+      // Eğer ZPL kodu zaten ^XA ile başlıyor ve ^XZ ile bitiyorsa, olduğu gibi gönder
+      final String finalZplToSend;
+      if (zplData.trim().startsWith("^XA") && zplData.trim().endsWith("^XZ")) {
+        finalZplToSend = zplData;
+      } else {
+        // Değilse, ZPL kodunu ^XA ve ^XZ arasına al
+        const String initCommands = "^XA";
+        finalZplToSend = "$initCommands$zplData^XZ";
+      }
+
       final String result = await _channel.invokeMethod('printLabel', {'address': macAddress, 'data': finalZplToSend});
       return result;
     } on PlatformException catch (e) {
@@ -41,7 +49,13 @@ class PrinterManager {
   ///
   /// Başarılı olursa sonuç mesajını döndürür, başarısız olursa hata fırlatır
   Future<String> printTestLabel(String macAddress) async {
-    String testZpl = """
+    String testZpl = """^XA
+^PON
+^PW400
+^MMT
+^PR0
+^LH0,6
+^PMN
 ^FO50,50
 ^A0N,50,50
 ^FDZebra Test Baskısı^FS
@@ -51,7 +65,8 @@ class PrinterManager {
 ^FO50,170
 ^A0N,30,30
 ^FDTest Başarılı!^FS
-""";
+^PQ1,0,1,Y
+^XZ""";
     return sendZplToPrinter(macAddress, testZpl);
   }
 
