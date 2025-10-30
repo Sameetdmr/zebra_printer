@@ -22,7 +22,7 @@ rootProject.allprojects {
 apply plugin: 'com.android.library'
 
 android {
-    namespace 'com.example.zebra_printer'
+    namespace 'com.sameetdmr.zebra_printer'
     compileSdkVersion 33
 
     defaultConfig {
