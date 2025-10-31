@@ -1,18 +1,18 @@
-/// Bluetooth cihaz türleri için enum
+/// Enum for Bluetooth device types
 enum BluetoothDeviceType {
-  /// Bilinmeyen cihaz türü (0)
+  /// Unknown device type (0)
   unknown,
 
-  /// Klasik Bluetooth cihazı (1)
+  /// Classic Bluetooth device (1)
   classic,
 
-  /// Bluetooth Low Energy cihazı (2)
+  /// Bluetooth Low Energy device (2)
   le,
 
-  /// Hem klasik hem de LE destekleyen cihaz (3)
+  /// Device supporting both classic and LE (3)
   dual;
 
-  /// Integer değerden BluetoothDeviceType oluşturur
+  /// Creates BluetoothDeviceType from integer value
   static BluetoothDeviceType fromInt(int? value) {
     switch (value) {
       case 1:
@@ -26,7 +26,7 @@ enum BluetoothDeviceType {
     }
   }
 
-  /// Enum değerini integer'a dönüştürür
+  /// Converts enum value to integer
   int toInt() {
     switch (this) {
       case BluetoothDeviceType.classic:
@@ -41,18 +41,18 @@ enum BluetoothDeviceType {
   }
 }
 
-/// Bluetooth cihaz eşleşme durumları için enum
+/// Enum for Bluetooth device bond states
 enum BluetoothBondState {
-  /// Eşleşmemiş (10)
+  /// Not bonded (10)
   none,
 
-  /// Eşleşme süreci devam ediyor (11)
+  /// Bonding in progress (11)
   bonding,
 
-  /// Eşleşmiş (12)
+  /// Bonded (12)
   bonded;
 
-  /// Integer değerden BluetoothBondState oluşturur
+  /// Creates BluetoothBondState from integer value
   static BluetoothBondState fromInt(int? value) {
     switch (value) {
       case 11:
@@ -64,7 +64,7 @@ enum BluetoothBondState {
     }
   }
 
-  /// Enum değerini integer'a dönüştürür
+  /// Converts enum value to integer
   int toInt() {
     switch (this) {
       case BluetoothBondState.bonding:
@@ -78,25 +78,25 @@ enum BluetoothBondState {
 }
 
 class BluetoothDevice {
-  /// Cihazın adı (null olabilir)
+  /// Device name (can be null)
   final String? name;
 
-  /// Cihazın MAC adresi
+  /// Device MAC address
   final String address;
 
-  /// Cihazın türü (null olabilir)
+  /// Device type (can be null)
   final BluetoothDeviceType type;
 
-  /// Cihazın eşleşme durumu
+  /// Device bond state
   final BluetoothBondState bondState;
 
-  /// Cihazın bağlantı durumu
+  /// Device connection state
   final bool isConnected;
 
   /// BluetoothDevice constructor
   BluetoothDevice({required this.address, this.name, BluetoothDeviceType? type, BluetoothBondState? bondState, this.isConnected = false}) : this.type = type ?? BluetoothDeviceType.unknown, this.bondState = bondState ?? BluetoothBondState.none;
 
-  /// Map'ten BluetoothDevice oluşturur
+  /// Creates BluetoothDevice from Map
   factory BluetoothDevice.fromMap(Map<dynamic, dynamic> map) {
     return BluetoothDevice(
       name: map['name'] as String?,
@@ -107,20 +107,20 @@ class BluetoothDevice {
     );
   }
 
-  /// Map'e dönüştürür
+  /// Converts to Map
   Map<String, dynamic> toMap() {
     return {'name': name, 'address': address, 'type': type.toInt(), 'bondState': bondState.toInt(), 'isConnected': isConnected};
   }
 
-  /// Eşitlik kontrolü için override
+  /// Override for equality check
   @override
   bool operator ==(Object other) => identical(this, other) || other is BluetoothDevice && runtimeType == other.runtimeType && address == other.address;
 
-  /// Hash kodu için override
+  /// Override for hash code
   @override
   int get hashCode => address.hashCode;
 
-  /// String temsilini döndürür
+  /// Returns string representation
   @override
   String toString() {
     return 'BluetoothDevice{name: $name, address: $address, type: $type, bondState: $bondState, isConnected: $isConnected}';

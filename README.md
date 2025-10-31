@@ -8,29 +8,30 @@
 [![Pub Points](https://img.shields.io/pub/points/zebra_printer)](https://pub.dev/packages/zebra_printer/score)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Zebra yazıcılar için Flutter paketi. Bluetooth bağlantısı ve ZPL gönderimi için kullanılır. Zebra Link-OS SDK'sını kullanarak Zebra yazıcılarla iletişim kurmanızı sağlar.
+A Flutter package for Zebra printers. Uses Zebra Link-OS SDK for Bluetooth connectivity and ZPL sending. Supports both Android and iOS platforms.
 
-## Özellikler
+## Features
 
-- Bluetooth cihazlarını tarama ve keşfetme
-- Bluetooth cihazlarıyla eşleşme ve eşleşmeyi kaldırma
-- Zebra yazıcılara bağlanma ve bağlantıyı kesme
-- ZPL kodunu yazıcıya gönderme
-- Yazıcı durumunu kontrol etme
-- Yazıcı hakkında bilgi alma
+- Scan and discover Bluetooth devices
+- Pair and unpair with Bluetooth devices
+- Connect and disconnect from Zebra printers
+- Send ZPL code to printers
+- Check printer status
+- Get printer information
+- Cross-platform support (Android and iOS)
 
-## Kurulum
+## Installation
 
-`pubspec.yaml` dosyanıza paketi ekleyin:
+Add the package to your `pubspec.yaml` file:
 
 ```yaml
 dependencies:
   zebra_printer: latest_version
 ```
 
-### Android Kurulumu
+### Android Setup
 
-Android için gerekli izinleri `android/app/src/main/AndroidManifest.xml` dosyasına ekleyin:
+Add the required permissions to your `android/app/src/main/AndroidManifest.xml` file:
 
 ```xml
 <uses-permission android:name="android.permission.BLUETOOTH" />
@@ -40,114 +41,129 @@ Android için gerekli izinleri `android/app/src/main/AndroidManifest.xml` dosyas
 <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 ```
 
-Android 12 ve üzeri için ek izinler gerekebilir. Detaylı bilgi için [Flutter Bluetooth Permissions](https://flutter.dev/docs/development/packages-and-plugins/plugin-api-migration#bluetooth-permissions) sayfasına bakabilirsiniz.
+For Android 12 and above, additional permissions may be required. For more information, see [Flutter Bluetooth Permissions](https://flutter.dev/docs/development/packages-and-plugins/plugin-api-migration#bluetooth-permissions).
 
-## Kullanım
+### iOS Setup
 
-### Temel Kullanım
+Add the required permissions to your `ios/Runner/Info.plist` file:
+
+```xml
+<key>NSBluetoothAlwaysUsageDescription</key>
+<string>This app uses Bluetooth to connect to Zebra printers.</string>
+<key>NSBluetoothPeripheralUsageDescription</key>
+<string>This app uses Bluetooth to connect to Zebra printers.</string>
+<key>UISupportedExternalAccessoryProtocols</key>
+<array>
+    <string>com.zebra.rawport</string>
+</array>
+```
+
+## Usage
+
+### Basic Usage
 
 ```dart
 import 'package:zebra_printer/zebra_printer.dart';
 
-// Bluetooth yöneticisini başlat
+// Initialize Bluetooth manager
 final bluetoothManager = BluetoothManager();
 
-// Yazıcı yöneticisini başlat
+// Initialize printer manager
 final printerManager = PrinterManager();
 
-// Bluetooth'un açık olup olmadığını kontrol et
+// Check if Bluetooth is enabled
 bool isEnabled = await bluetoothManager.isBluetoothEnabled();
 
-// Eşleştirilmiş cihazları al
+// Get paired devices
 List<BluetoothDevice> bondedDevices = await bluetoothManager.getBondedDevices();
 
-// Cihaz keşfini başlat
+// Start device discovery
 await bluetoothManager.startDiscovery();
 
-// Cihaz keşfini durdur
+// Stop device discovery
 await bluetoothManager.stopDiscovery();
 
-// Cihaza bağlan
+// Connect to a device
 await bluetoothManager.connect('00:11:22:33:44:55');
 
-// Bağlantıyı kes
+// Disconnect from a device
 await bluetoothManager.disconnect();
 
-// ZPL kodu gönder
+// Send ZPL code to printer
 try {
   String result = await printerManager.sendZplToPrinter('00:11:22:33:44:55', '^XA^FO50,50^A0N,50,50^FDHello, World!^FS^XZ');
-  print('Baskı başarılı: $result');
+  print('Print successful: $result');
 } catch (e) {
-  print('Baskı hatası: $e');
+  print('Print error: $e');
 }
 
-// Test etiketi yazdır
+// Print a test label
 try {
   String result = await printerManager.printTestLabel('00:11:22:33:44:55');
-  print('Test baskısı başarılı: $result');
+  print('Test print successful: $result');
 } catch (e) {
-  print('Test baskısı hatası: $e');
+  print('Test print error: $e');
 }
 
-// Yazıcı durumunu kontrol et
+// Check printer status
 try {
   PrinterStatus status = await printerManager.checkPrinterStatus('00:11:22:33:44:55');
-  print('Yazıcı durumu: $status');
+  print('Printer status: $status');
 } catch (e) {
-  print('Durum kontrolü hatası: $e');
+  print('Status check error: $e');
 }
 ```
 
-### Bluetooth Cihaz Keşfi ve Bağlantı Yönetimi
+### Bluetooth Device Discovery and Connection Management
 
 ```dart
-// Bluetooth Manager örneği oluştur
+// Create a Bluetooth Manager instance
 final bluetoothManager = BluetoothManager();
 
-// Bluetooth durumunu dinle
+// Listen for connection state changes
 bluetoothManager.onConnectionStateChanged.listen((state) {
-  print('Bağlantı durumu değişti: $state');
+  print('Connection state changed: $state');
   
   if (state == BluetoothConnectionState.connected) {
-    print('Cihaza bağlandı: ${bluetoothManager.connectedDevice?.name}');
+    print('Connected to device: ${bluetoothManager.connectedDevice?.name}');
   }
 });
 
-// Tarama durumunu dinle
+// Listen for scan state changes
 bluetoothManager.onScanStateChanged.listen((state) {
-  print('Tarama durumu değişti: $state');
+  print('Scan state changed: $state');
 });
 
-// Cihaz bulunduğunda bildirim al
+// Listen for device discovery
 bluetoothManager.onDeviceFound.listen((device) {
-  print('Cihaz bulundu: ${device.name} (${device.address})');
+  print('Device found: ${device.name} (${device.address})');
 });
 
-// Tarama tamamlandığında bildirim al
+// Listen for discovery completion
 bluetoothManager.onDiscoveryFinished.listen((_) {
-  print('Tarama tamamlandı');
-  print('Bulunan cihazlar: ${bluetoothManager.devices.length}');
+  print('Discovery completed');
+  print('Found devices: ${bluetoothManager.devices.length}');
 });
 
-// Taramayı başlat
+// Start discovery
 await bluetoothManager.startDiscovery();
 
-// Bir süre sonra taramayı durdur
+// Wait for some time then stop discovery
 await Future.delayed(Duration(seconds: 10));
 await bluetoothManager.stopDiscovery();
 
-// Bulunan cihazları listele
+// List found devices
 for (var device in bluetoothManager.devices) {
-  print('${device.name} (${device.address}) - Tür: ${device.type}');
+  print('${device.name} (${device.address}) - Type: ${device.type}');
 }
 
-// Eşleştirilmiş cihazları listele
+// List paired devices
 final bondedDevices = await bluetoothManager.getBondedDevices();
 for (var device in bondedDevices) {
-  print('Eşleştirilmiş: ${device.name} (${device.address})');
+  print('Paired: ${device.name} (${device.address})');
 }
 
-// Cihaza bağlan
+// Connect to a device
 final targetDevice = bluetoothManager.devices.firstWhere(
   (d) => d.name?.contains('Zebra') ?? false,
   orElse: () => null,
@@ -157,13 +173,13 @@ if (targetDevice != null) {
   await bluetoothManager.connect(targetDevice.address);
 }
 
-// Kaynakları temizle
+// Clean up resources
 bluetoothManager.dispose();
 ```
 
-## Enum Kullanımı
+## Enum Usage
 
-Bu paket, daha okunabilir ve tip güvenli kod için integer değerler yerine enum'ları kullanır:
+This package uses enums instead of integer values for better readability and type safety:
 
 ### BluetoothDeviceType
 
@@ -233,12 +249,12 @@ enum PauseState {
 }
 ```
 
-## ZPL Örnekleri
+## ZPL Examples
 
-### Basit ZPL Örnekleri
+### Simple ZPL Examples
 
 ```dart
-// Basit bir etiket oluşturma
+// Create a simple label
 String createSimpleLabel(String text) {
   return """
 ^XA
@@ -249,13 +265,13 @@ String createSimpleLabel(String text) {
 """;
 }
 
-// Barkod içeren bir etiket oluşturma
+// Create a label with barcode
 String createBarcodeLabel(String barcode) {
   return """
 ^XA
 ^FO50,50
 ^A0N,30,30
-^FDBarkod:^FS
+^FDBarcode:^FS
 ^FO50,100
 ^BY3
 ^BCN,100,Y,N,N
@@ -264,13 +280,13 @@ String createBarcodeLabel(String barcode) {
 """;
 }
 
-// QR kod içeren bir etiket oluşturma
+// Create a label with QR code
 String createQRCodeLabel(String data) {
   return """
 ^XA
 ^FO50,50
 ^A0N,30,30
-^FDQR Kod:^FS
+^FDQR Code:^FS
 ^FO50,100
 ^BQN,2,10
 ^FDMA,$data^FS
@@ -279,10 +295,36 @@ String createQRCodeLabel(String data) {
 }
 ```
 
-## Zebra Link-OS SDK
+## Zebra Link-OS SDK and Platform Differences
 
-Bu paket, [Zebra Link-OS SDK](https://techdocs.zebra.com/link-os/2-14/android)'yı kullanır. Daha detaylı bilgi için Zebra'nın resmi dokümantasyonuna bakabilirsiniz.
+### Android
 
-## Lisans
+On the Android platform, this package directly uses the [Zebra Link-OS SDK](https://techdocs.zebra.com/link-os/2-14/android). For more detailed information, refer to Zebra's official documentation.
 
-Bu proje MIT lisansı altında lisanslanmıştır. Detaylar için [LICENSE](LICENSE) dosyasına bakabilirsiniz.
+### iOS
+
+On the iOS platform, communication with Zebra printers is established using the [Zebra Link-OS SDK](https://techdocs.zebra.com/link-os/2-13/ios). The `com.zebra.rawport` protocol is used for communication with Zebra printers on iOS, supporting MFi (Made For iPhone/iPad) certified Zebra printers.
+
+### Platform Differences
+
+There are some differences between iOS and Android platforms:
+
+1. **Device Pairing Operations**:
+   - Android: Programmatic pairing and unpairing are supported.
+   - iOS: Programmatic pairing is not supported; users need to pair devices through the iOS Settings app.
+
+2. **Device Identification**:
+   - Android: Devices are identified by MAC address.
+   - iOS: Devices are identified by serial number or UUID.
+
+3. **Printer Status Information**:
+   - Android: Detailed status information can be obtained through the Zebra SDK.
+   - iOS: Limited status information is available; in some cases, manual ZPL commands may need to be sent.
+
+4. **Connection Management**:
+   - Android: Both Bluetooth Classic and Bluetooth Low Energy are supported.
+   - iOS: MFi (Made For iPhone/iPad) certified Zebra printers are supported through the ExternalAccessory framework.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

@@ -1,0 +1,23 @@
+PODS:
+  - Flutter (3.13.0)
+  - zebra_printer (0.0.1):
+    - Flutter
+
+DEPENDENCIES:
+  - zebra_printer (from `./`)
+
+SPEC REPOS:
+  trunk:
+    - Flutter
+
+EXTERNAL SOURCES:
+  zebra_printer:
+    :path: "./"
+
+SPEC CHECKSUMS:
+  Flutter: 8ff16720b007bae16abfe75ef9fe3ee45ead486a
+  zebra_printer: 023ba57344795feb05f1d69a0cd0042250e7e7c1
+
+PODFILE CHECKSUM: 6adab6d8058b02fbbcca67d4bedd82a09a467c70
+
+COCOAPODS: 1.16.2

@@ -1,96 +1,96 @@
-/// Yazıcı bağlantı durumu için enum
+/// Enum for printer connection state
 enum PrinterConnectionState {
-  /// Yazıcı bağlı
+  /// Printer is connected
   connected,
 
-  /// Yazıcı bağlı değil
+  /// Printer is disconnected
   disconnected;
 
-  /// Boolean değerden PrinterConnectionState oluşturur
+  /// Creates PrinterConnectionState from boolean value
   static PrinterConnectionState fromBool(bool isConnected) {
     return isConnected ? PrinterConnectionState.connected : PrinterConnectionState.disconnected;
   }
 
-  /// Enum değerini boolean'a dönüştürür
+  /// Converts enum value to boolean
   bool toBool() {
     return this == PrinterConnectionState.connected;
   }
 }
 
-/// Kağıt durumu için enum
+/// Enum for paper state
 enum PaperState {
-  /// Kağıt var
+  /// Paper is present
   present,
 
-  /// Kağıt yok
+  /// Paper is out
   out;
 
-  /// Boolean değerden PaperState oluşturur
+  /// Creates PaperState from boolean value
   static PaperState fromBool(bool isPaperOut) {
     return isPaperOut ? PaperState.out : PaperState.present;
   }
 
-  /// Enum değerini boolean'a dönüştürür
+  /// Converts enum value to boolean
   bool isPaperOut() {
     return this == PaperState.out;
   }
 }
 
-/// Yazıcı kafası durumu için enum
+/// Enum for printer head state
 enum HeadState {
-  /// Yazıcı kafası kapalı
+  /// Printer head is closed
   closed,
 
-  /// Yazıcı kafası açık
+  /// Printer head is open
   open;
 
-  /// Boolean değerden HeadState oluşturur
+  /// Creates HeadState from boolean value
   static HeadState fromBool(bool isHeadOpen) {
     return isHeadOpen ? HeadState.open : HeadState.closed;
   }
 
-  /// Enum değerini boolean'a dönüştürür
+  /// Converts enum value to boolean
   bool isOpen() {
     return this == HeadState.open;
   }
 }
 
-/// Yazıcı duraklatma durumu için enum
+/// Enum for printer pause state
 enum PauseState {
-  /// Yazıcı çalışıyor
+  /// Printer is running
   running,
 
-  /// Yazıcı duraklatılmış
+  /// Printer is paused
   paused;
 
-  /// Boolean değerden PauseState oluşturur
+  /// Creates PauseState from boolean value
   static PauseState fromBool(bool isPaused) {
     return isPaused ? PauseState.paused : PauseState.running;
   }
 
-  /// Enum değerini boolean'a dönüştürür
+  /// Converts enum value to boolean
   bool isPaused() {
     return this == PauseState.paused;
   }
 }
 
 class PrinterStatus {
-  /// Yazıcının bağlantı durumu
+  /// Printer connection state
   final PrinterConnectionState connectionState;
 
-  /// Kağıt durumu
+  /// Paper state
   final PaperState paperState;
 
-  /// Yazıcı duraklatılma durumu
+  /// Printer pause state
   final PauseState pauseState;
 
-  /// Yazıcı kafası durumu
+  /// Printer head state
   final HeadState headState;
 
-  /// Yazıcı kafasının sıcaklığı
+  /// Printer head temperature
   final String temperature;
 
-  /// Hata mesajı (varsa)
+  /// Error message (if any)
   final String? errorMessage;
 
   /// PrinterStatus constructor
@@ -100,10 +100,10 @@ class PrinterStatus {
       pauseState = PauseState.fromBool(isPaused),
       headState = HeadState.fromBool(isHeadOpen);
 
-  /// Enum değerlerini doğrudan alan constructor
+  /// Constructor with direct enum values
   PrinterStatus.withEnums({required this.connectionState, required this.paperState, required this.pauseState, required this.headState, this.temperature = '0', this.errorMessage});
 
-  /// Map'ten PrinterStatus oluşturur
+  /// Creates PrinterStatus from Map
   factory PrinterStatus.fromMap(Map<dynamic, dynamic> map) {
     return PrinterStatus(
       isConnected: map['isConnected'] as bool? ?? false,
@@ -115,20 +115,20 @@ class PrinterStatus {
     );
   }
 
-  /// Map'e dönüştürür
+  /// Converts to Map
   Map<String, dynamic> toMap() {
     return {'isConnected': connectionState.toBool(), 'isPaperOut': paperState.isPaperOut(), 'isPaused': pauseState.isPaused(), 'isHeadOpen': headState.isOpen(), 'temperature': temperature, 'error': errorMessage};
   }
 
-  /// Geriye uyumluluk için getter'lar
+  /// Getters for backward compatibility
   bool get isConnected => connectionState.toBool();
   bool get isPaperOut => paperState.isPaperOut();
   bool get isPaused => pauseState.isPaused();
   bool get isHeadOpen => headState.isOpen();
 
-  /// String temsilini döndürür
+  /// Returns string representation
   @override
   String toString() {
-    return 'PrinterStatus{bağlantı: $connectionState, kağıt: $paperState, durum: $pauseState, kafa: $headState, sıcaklık: $temperature, hata: $errorMessage}';
+    return 'PrinterStatus{connection: $connectionState, paper: $paperState, state: $pauseState, head: $headState, temperature: $temperature, error: $errorMessage}';
   }
 }

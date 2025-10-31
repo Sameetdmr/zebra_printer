@@ -1,17 +1,17 @@
 # Zebra Printer Example
 
-Bu örnek uygulama, zebra_printer paketinin nasıl kullanılacağını gösterir.
+This example app demonstrates how to use the zebra_printer package.
 
-## Özellikler
+## Features
 
-- Bluetooth cihazlarını tarama
-- Zebra yazıcılara bağlanma
-- Test etiketi yazdırma
-- Yazıcı durumunu kontrol etme
+- Scanning Bluetooth devices
+- Connecting to Zebra printers
+- Printing test labels
+- Checking printer status
 
-## Başlangıç
+## Getting Started
 
-Bu örnek uygulamayı çalıştırmak için:
+To run this example app:
 
 ```bash
 cd example
@@ -19,18 +19,19 @@ flutter pub get
 flutter run
 ```
 
-## Kullanım
+## Usage
 
-1. "Cihazları Tara" butonuna tıklayarak Bluetooth cihazlarını tarayın
-2. Listeden bir Zebra yazıcı seçin
-3. Bağlandıktan sonra, "Test Etiketi Yazdır" butonuna tıklayarak test etiketi yazdırın
-4. "Yazıcı Durumunu Kontrol Et" butonuna tıklayarak yazıcının durumunu kontrol edin
+1. Click the "Scan Devices" button to scan for Bluetooth devices
+2. Select a Zebra printer from the list
+3. After connecting, click the "Print Test Label" button to print a test label
+4. Click the "Check Printer Status" button to check the printer's status
 
-## Ekran Görüntüleri
+## Screenshots
 
-(Ekran görüntüleri burada olacak)
+(Screenshots will be here)
 
-## Notlar
+## Notes
 
-- Android için gerekli Bluetooth izinlerinin verildiğinden emin olun
-- Gerçek bir Zebra yazıcı gerektirir
+- Make sure to grant the necessary Bluetooth permissions for Android
+- iOS requires pairing through the Settings app
+- Requires a physical Zebra printer

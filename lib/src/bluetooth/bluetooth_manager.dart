@@ -3,40 +3,40 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import '../models/bluetooth_device.dart';
 
-/// Bluetooth bağlantı durumu için enum
+/// Enum for Bluetooth connection state
 enum BluetoothConnectionState {
-  /// Bağlantı yok
+  /// No connection
   disconnected,
 
-  /// Bağlanıyor
+  /// Connecting
   connecting,
 
-  /// Bağlantı kuruldu
+  /// Connection established
   connected,
 
-  /// Bağlantı kesiliyor
+  /// Disconnecting
   disconnecting,
 
-  /// Bağlantı hatası
+  /// Connection error
   error,
 }
 
-/// Bluetooth tarama durumu için enum
+/// Enum for Bluetooth scan state
 enum BluetoothScanState {
-  /// Tarama yok
+  /// No scanning
   idle,
 
-  /// Tarama başlatılıyor
+  /// Scan starting
   starting,
 
-  /// Tarama devam ediyor
+  /// Scanning in progress
   scanning,
 
-  /// Tarama durduruluyor
+  /// Scan stopping
   stopping,
 }
 
-/// Bluetooth işlemlerini yöneten sınıf
+/// Class for managing Bluetooth operations
 class BluetoothManager {
   /// Singleton instance
   static final BluetoothManager _instance = BluetoothManager._internal();
@@ -52,72 +52,72 @@ class BluetoothManager {
   /// Method channel
   static const MethodChannel _channel = MethodChannel('com.sameetdmr.zebra_printer/bluetooth');
 
-  /// Discovery bittiğinde tetiklenen stream controller
+  /// Stream controller triggered when discovery finishes
   final StreamController<void> _discoveryFinishedController = StreamController.broadcast();
 
-  /// Cihaz bulunduğunda tetiklenen stream controller
+  /// Stream controller triggered when device is found
   final StreamController<BluetoothDevice> _deviceFoundController = StreamController.broadcast();
 
-  /// Bağlantı durumu değiştiğinde tetiklenen stream controller
+  /// Stream controller triggered when connection state changes
   final StreamController<BluetoothConnectionState> _connectionStateController = StreamController.broadcast();
 
-  /// Tarama durumu değiştiğinde tetiklenen stream controller
+  /// Stream controller triggered when scan state changes
   final StreamController<BluetoothScanState> _scanStateController = StreamController.broadcast();
 
-  /// Tarama durumu
+  /// Scan state
   BluetoothScanState _scanState = BluetoothScanState.idle;
 
-  /// Bağlantı durumu
+  /// Connection state
   BluetoothConnectionState _connectionState = BluetoothConnectionState.disconnected;
 
-  /// Bağlı cihaz
+  /// Connected device
   BluetoothDevice? _connectedDevice;
 
-  /// Bulunan cihazlar listesi
+  /// List of found devices
   final List<BluetoothDevice> _devices = [];
 
-  /// Eşleştirilmiş cihazlar listesi
+  /// List of bonded devices
   final List<BluetoothDevice> _bondedDevices = [];
 
-  /// Tarama durumunu döndürür
+  /// Returns the scan state
   BluetoothScanState get scanState => _scanState;
 
-  /// Bağlantı durumunu döndürür
+  /// Returns the connection state
   BluetoothConnectionState get connectionState => _connectionState;
 
-  /// Bağlı cihazı döndürür
+  /// Returns the connected device
   BluetoothDevice? get connectedDevice => _connectedDevice;
 
-  /// Tarama yapılıyor mu?
+  /// Is scanning in progress?
   bool get isScanning => _scanState == BluetoothScanState.scanning || _scanState == BluetoothScanState.starting;
 
-  /// Bağlantı kuruldu mu?
+  /// Is connection established?
   bool get isConnected => _connectionState == BluetoothConnectionState.connected;
 
-  /// Bulunan cihazları döndürür (değiştirilemez liste)
+  /// Returns the list of found devices (unmodifiable list)
   List<BluetoothDevice> get devices => List.unmodifiable(_devices);
 
-  /// Eşleştirilmiş cihazları döndürür (değiştirilemez liste)
+  /// Returns the list of bonded devices (unmodifiable list)
   List<BluetoothDevice> get bondedDevices => List.unmodifiable(_bondedDevices);
 
-  /// Cihaz bulunduğunda tetiklenen stream
+  /// Stream triggered when device is found
   Stream<BluetoothDevice> get onDeviceFound => _deviceFoundController.stream;
 
-  /// Discovery bittiğinde tetiklenen stream
+  /// Stream triggered when discovery finishes
   Stream<void> get onDiscoveryFinished => _discoveryFinishedController.stream;
 
-  /// Bağlantı durumu değiştiğinde tetiklenen stream
+  /// Stream triggered when connection state changes
   Stream<BluetoothConnectionState> get onConnectionStateChanged => _connectionStateController.stream;
 
-  /// Tarama durumu değiştiğinde tetiklenen stream
+  /// Stream triggered when scan state changes
   Stream<BluetoothScanState> get onScanStateChanged => _scanStateController.stream;
 
-  /// Method channel handler'ı ayarlar
+  /// Sets up the method channel handler
   void _init() {
     _channel.setMethodCallHandler(_handleMethodCall);
   }
 
-  /// Method channel'dan gelen çağrıları işler
+  /// Handles calls from the method channel
   Future<dynamic> _handleMethodCall(MethodCall call) async {
     switch (call.method) {
       case 'onDeviceFound':
@@ -169,7 +169,7 @@ class BluetoothManager {
     return null;
   }
 
-  /// Tarama durumunu günceller ve stream'e bildirir
+  /// Updates the scan state and notifies the stream
   void _updateScanState(BluetoothScanState newState) {
     if (_scanState != newState) {
       _scanState = newState;
@@ -177,7 +177,7 @@ class BluetoothManager {
     }
   }
 
-  /// Bağlantı durumunu günceller ve stream'e bildirir
+  /// Updates the connection state and notifies the stream
   void _updateConnectionState(BluetoothConnectionState newState) {
     if (_connectionState != newState) {
       _connectionState = newState;
@@ -185,7 +185,7 @@ class BluetoothManager {
     }
   }
 
-  /// MAC adresine göre cihazı bulur
+  /// Finds a device by MAC address
   BluetoothDevice? _findDeviceByAddress(String address) {
     for (final device in _devices) {
       if (device.address == address) {
@@ -202,24 +202,24 @@ class BluetoothManager {
     return null;
   }
 
-  /// Bluetooth'un açık olup olmadığını kontrol eder
+  /// Checks if Bluetooth is enabled
   Future<bool> isBluetoothEnabled() async {
     return await _channel.invokeMethod('isBluetoothEnabled');
   }
 
-  /// Eşleştirilmiş cihazları getirir ve günceller
+  /// Gets and updates the bonded devices
   Future<List<BluetoothDevice>> getBondedDevices() async {
     final List<dynamic> result = await _channel.invokeMethod('getBondedDevices');
     final devices = result.map((deviceMap) => BluetoothDevice.fromMap(deviceMap)).toList();
 
-    // Eşleştirilmiş cihazlar listesini güncelle
+    // Update the bonded devices list
     _bondedDevices.clear();
     _bondedDevices.addAll(devices);
 
     return devices;
   }
 
-  /// Cihaz keşfini başlatır
+  /// Starts device discovery
   Future<bool> startDiscovery() async {
     if (isScanning) {
       return false;
@@ -228,14 +228,14 @@ class BluetoothManager {
     _updateScanState(BluetoothScanState.starting);
 
     try {
-      // Önce eşleştirilmiş cihazları al
+      // First get bonded devices
       final bondedDevices = await getBondedDevices();
 
-      // Bulunan cihazlar listesini temizle ve eşleştirilmiş cihazları ekle
+      // Clear the found devices list and add bonded devices
       _devices.clear();
       _devices.addAll(bondedDevices);
 
-      // Keşfi başlat
+      // Start discovery
       final result = await _channel.invokeMethod('startDiscovery');
 
       if (result == true) {
@@ -251,7 +251,7 @@ class BluetoothManager {
     }
   }
 
-  /// Cihaz keşfini durdurur
+  /// Stops device discovery
   Future<bool> stopDiscovery() async {
     if (!isScanning) {
       return false;
@@ -269,7 +269,7 @@ class BluetoothManager {
     }
   }
 
-  /// Cihazla eşleşir
+  /// Pairs with a device
   Future<bool> pairDevice(String address) async {
     try {
       return await _channel.invokeMethod('pairDevice', {'address': address});
@@ -278,10 +278,10 @@ class BluetoothManager {
     }
   }
 
-  /// Cihazla eşleşmeyi kaldırır
+  /// Unpairs from a device
   Future<bool> unpairDevice(String address) async {
     try {
-      // Eğer bağlı cihaz ise önce bağlantıyı kes
+      // If this is the connected device, disconnect first
       if (_connectedDevice?.address == address) {
         await disconnect();
       }
@@ -292,7 +292,7 @@ class BluetoothManager {
     }
   }
 
-  /// Cihaza bağlanır
+  /// Connects to a device
   Future<bool> connect(String address) async {
     if (_connectionState == BluetoothConnectionState.connected || _connectionState == BluetoothConnectionState.connecting) {
       return false;
@@ -308,7 +308,7 @@ class BluetoothManager {
     }
   }
 
-  /// Bağlantıyı keser
+  /// Disconnects from a device
   Future<bool> disconnect() async {
     if (_connectionState != BluetoothConnectionState.connected) {
       return false;
@@ -324,19 +324,19 @@ class BluetoothManager {
     }
   }
 
-  /// Stream controller'ları kapatır
+  /// Closes the stream controllers
   void dispose() {
-    // Aktif tarama varsa durdur
+    // Stop active scanning if any
     if (isScanning) {
       stopDiscovery();
     }
 
-    // Aktif bağlantı varsa kes
+    // Disconnect active connection if any
     if (isConnected) {
       disconnect();
     }
 
-    // Stream controller'ları kapat
+    // Close stream controllers
     _discoveryFinishedController.close();
     _deviceFoundController.close();
     _connectionStateController.close();
