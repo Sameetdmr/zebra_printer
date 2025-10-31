@@ -94,7 +94,7 @@ class BluetoothDevice {
   final bool isConnected;
 
   /// BluetoothDevice constructor
-  BluetoothDevice({required this.address, this.name, BluetoothDeviceType? type, BluetoothBondState? bondState, this.isConnected = false}) : this.type = type ?? BluetoothDeviceType.unknown, this.bondState = bondState ?? BluetoothBondState.none;
+  BluetoothDevice({required this.address, this.name, BluetoothDeviceType? type, BluetoothBondState? bondState, this.isConnected = false}) : type = type ?? BluetoothDeviceType.unknown, bondState = bondState ?? BluetoothBondState.none;
 
   /// Creates BluetoothDevice from Map
   factory BluetoothDevice.fromMap(Map<dynamic, dynamic> map) {
