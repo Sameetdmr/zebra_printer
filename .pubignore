@@ -1,0 +1,29 @@
+# Ignore .dart_tool directory
+.dart_tool/
+
+# Ignore IDE files
+android/.idea/
+ios/Pods/
+ios/Runner.xcworkspace/xcuserdata/
+ios/Runner.xcodeproj/xcuserdata/
+example/ios/Pods/
+example/ios/Runner.xcworkspace/xcuserdata/
+example/ios/Runner.xcodeproj/xcuserdata/
+
+# Ignore build directories
+build/
+example/build/
+
+# Ignore other files that shouldn't be published
+.DS_Store
+.vscode/
+.idea/
+*.iml
+*.log
+*.pyc
+*.swp
+.atom/
+.buildlog/
+.history/
+.svn/
+migrate_working_dir/
