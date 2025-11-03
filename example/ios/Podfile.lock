@@ -1,15 +1,21 @@
 PODS:
   - Flutter (1.0.0)
+  - zebra_printer (0.0.1):
+    - Flutter
 
 DEPENDENCIES:
   - Flutter (from `Flutter`)
+  - zebra_printer (from `.symlinks/plugins/zebra_printer/ios`)
 
 EXTERNAL SOURCES:
   Flutter:
     :path: Flutter
+  zebra_printer:
+    :path: ".symlinks/plugins/zebra_printer/ios"
 
 SPEC CHECKSUMS:
   Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
+  zebra_printer: 33ba1de8fb9d1ea0724d2d516a9a7fe1b64abb4c
 
 PODFILE CHECKSUM: 4305caec6b40dde0ae97be1573c53de1882a07e5
 

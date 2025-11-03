@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.8
+
+* Fixed iOS Bluetooth connection and disconnection issues
+* Improved iOS Bluetooth service discovery
+* Implemented proper ZPL printing using Zebra SDK in iOS
+* Fixed Objective-C bridge implementation for Zebra SDK
+* Fixed ARC (Automatic Reference Counting) issues in iOS code
+* Fixed Xcode build error for iOS simulator
+* Added better error handling and logging for iOS
+
 ## 0.1.7
 
 * Added iOS platform support

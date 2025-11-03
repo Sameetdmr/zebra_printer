@@ -19,8 +19,8 @@ A Flutter plugin for Zebra printers that supports both Android and iOS.
   
   # Zebra SDK header paths
   s.xcconfig = { 
-    'HEADER_SEARCH_PATHS' => '$(PODS_ROOT)/../../Classes/include',
-    'LIBRARY_SEARCH_PATHS' => '$(PODS_ROOT)/../../Classes'
+    'HEADER_SEARCH_PATHS' => '$(PODS_ROOT)/../../ios/Classes/include',
+    'LIBRARY_SEARCH_PATHS' => '$(PODS_ROOT)/../../ios/Classes'
   }
   
   # Include Zebra SDK static library
@@ -34,7 +34,13 @@ A Flutter plugin for Zebra printers that supports both Android and iOS.
   
   # Include paths
   s.pod_target_xcconfig = {
-    'HEADER_SEARCH_PATHS' => '$(PODS_ROOT)/../../Classes/include',
-    'USER_HEADER_SEARCH_PATHS' => '$(PODS_ROOT)/../../Classes/include'
+    'HEADER_SEARCH_PATHS' => '$(PODS_ROOT)/../../ios/Classes/include $(PODS_ROOT)/../../ios/Classes',
+    'USER_HEADER_SEARCH_PATHS' => '$(PODS_ROOT)/../../ios/Classes/include $(PODS_ROOT)/../../ios/Classes',
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'arm64'
+  }
+  
+  # Exclude arm64 architecture for simulator builds
+  s.user_target_xcconfig = {
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'arm64'
   }
 end

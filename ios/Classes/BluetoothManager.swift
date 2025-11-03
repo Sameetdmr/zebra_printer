@@ -189,21 +189,41 @@ import Flutter
     }
     
     private func connect(address: String, result: @escaping FlutterResult) {
-        // Zaten bağlıysa veya bağlanıyorsa hata döndür
-        if connectionState == CONNECTION_STATE_CONNECTED || connectionState == CONNECTION_STATE_CONNECTING {
-            result(FlutterError(code: "ALREADY_CONNECTING", message: "Already connected or connecting to a device", details: nil))
-            return
+        // Disconnect first if already connected to another device
+        if connectionState == CONNECTION_STATE_CONNECTED && connectedPeripheral != nil {
+            // If trying to connect to the same device, just return success
+            if connectedPeripheral!.identifier.uuidString == address {
+                result(true)
+                return
+            }
+            
+            // Disconnect from current device first
+            centralManager.cancelPeripheralConnection(connectedPeripheral!)
+            connectedPeripheral = nil
+        }
+        
+        // If already connecting, cancel that attempt
+        if connectionState == CONNECTION_STATE_CONNECTING {
+            // Reset connection state
+            updateConnectionState(CONNECTION_STATE_DISCONNECTED)
         }
         
         if let peripheral = findPeripheralByAddress(address) {
-            // Bağlantı durumunu güncelle
+            // Update connection state
             updateConnectionState(CONNECTION_STATE_CONNECTING)
             
-            // Bağlan
-            centralManager.connect(peripheral, options: nil)
+            // Set as the peripheral we're trying to connect to
+            connectedPeripheral = peripheral
+            peripheral.delegate = self
             
-            // Bağlantı sonucu asenkron olarak CBCentralManagerDelegate metodlarında işlenecek
-            // Geçici olarak başarılı döndürüyoruz, gerçek sonuç delegate metodlarında işlenecek
+            // Connect with options that improve reliability
+            let options: [String: Any] = [
+                CBConnectPeripheralOptionNotifyOnDisconnectionKey: true,
+                CBConnectPeripheralOptionNotifyOnConnectionKey: true
+            ]
+            centralManager.connect(peripheral, options: options)
+            
+            // Connection result will be handled asynchronously in CBCentralManagerDelegate methods
             result(true)
         } else {
             result(FlutterError(code: "DEVICE_NOT_FOUND", message: "Device not found with address: \(address)", details: nil))
@@ -211,22 +231,28 @@ import Flutter
     }
     
     private func disconnect(result: FlutterResult?) {
-        // Bağlı değilse hata döndür
+        // If not connected or no connected peripheral, return success (already disconnected)
         if connectionState != CONNECTION_STATE_CONNECTED || connectedPeripheral == nil {
             if let result = result {
-                result(FlutterError(code: "NOT_CONNECTED", message: "Not connected to any device", details: nil))
+                result(true) // Return success instead of error since we're already disconnected
             }
             return
         }
         
-        // Bağlantı durumunu güncelle
+        // Update connection state
         updateConnectionState(CONNECTION_STATE_DISCONNECTING)
         
-        // Bağlantıyı kes
-        centralManager.cancelPeripheralConnection(connectedPeripheral!)
+        // Store the peripheral reference before disconnecting
+        let peripheral = connectedPeripheral!
         
-        // Bağlantı kesme sonucu asenkron olarak CBCentralManagerDelegate metodlarında işlenecek
-        // Geçici olarak başarılı döndürüyoruz, gerçek sonuç delegate metodlarında işlenecek
+        // Disconnect
+        centralManager.cancelPeripheralConnection(peripheral)
+        
+        // Immediately clear the connected peripheral to avoid state issues
+        // The actual state will be updated in the delegate methods
+        connectedPeripheral = nil
+        
+        // Return success immediately, actual result will be handled in delegate methods
         if let result = result {
             result(true)
         }
@@ -281,65 +307,159 @@ import Flutter
     }
     
     public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        // Bağlantı başarılı
+        // Connection successful
         connectedPeripheral = peripheral
         peripheral.delegate = self
         
-        // Servis keşfini başlat
+        // Start service discovery - try with nil to discover all services if the specific UUID doesn't work
         peripheral.discoverServices([SERVICE_UUID])
         
-        // Bağlantı durumunu güncelle
+        // Update connection state
         updateConnectionState(CONNECTION_STATE_CONNECTED)
+        
+        // Log success
+        print("Successfully connected to peripheral: \(peripheral.identifier.uuidString)")
     }
     
     public func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        // Bağlantı hatası
+        // Connection failed
+        print("Failed to connect to peripheral: \(peripheral.identifier.uuidString), error: \(error?.localizedDescription ?? "unknown error")")
+        
         if peripheral.identifier == connectedPeripheral?.identifier {
             connectedPeripheral = nil
             updateConnectionState(CONNECTION_STATE_ERROR)
+            
+            // Try to reconnect after a short delay (optional)
+            /*
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                guard let self = self else { return }
+                if self.connectionState != CONNECTION_STATE_CONNECTED && self.connectionState != CONNECTION_STATE_CONNECTING {
+                    print("Attempting to reconnect to: \(peripheral.identifier.uuidString)")
+                    self.centralManager.connect(peripheral, options: nil)
+                }
+            }
+            */
         }
     }
     
     public func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        // Bağlantı kesildi
+        // Disconnected
+        print("Disconnected from peripheral: \(peripheral.identifier.uuidString), error: \(error?.localizedDescription ?? "No error")")
+        
         if peripheral.identifier == connectedPeripheral?.identifier {
             connectedPeripheral = nil
-            updateConnectionState(CONNECTION_STATE_DISCONNECTED)
+            
+            if error != nil {
+                // If there was an error, it might be an unexpected disconnection
+                updateConnectionState(CONNECTION_STATE_ERROR)
+            } else {
+                // Normal disconnection
+                updateConnectionState(CONNECTION_STATE_DISCONNECTED)
+            }
         }
     }
     
     // MARK: - CBPeripheralDelegate
     public func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-        guard error == nil else {
-            print("Error discovering services: \(error!.localizedDescription)")
+        if let error = error {
+            print("Error discovering services: \(error.localizedDescription)")
+            
+            // If the specific UUID didn't work, try discovering all services
+            if peripheral.services == nil || peripheral.services?.isEmpty == true {
+                print("Retrying service discovery with nil UUID")
+                peripheral.discoverServices(nil)
+            }
             return
         }
         
-        guard let services = peripheral.services else { return }
+        guard let services = peripheral.services, !services.isEmpty else {
+            print("No services found for peripheral: \(peripheral.identifier.uuidString)")
+            
+            // If no services found with specific UUID, try with nil to discover all
+            if peripheral.services?.isEmpty == true {
+                print("Retrying service discovery with nil UUID")
+                peripheral.discoverServices(nil)
+            }
+            return
+        }
         
+        print("Discovered \(services.count) services for peripheral: \(peripheral.identifier.uuidString)")
+        
+        // Discover characteristics for each service
         for service in services {
+            print("Discovering characteristics for service: \(service.uuid)")
             peripheral.discoverCharacteristics(nil, for: service)
         }
     }
     
     public func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
-        guard error == nil else {
-            print("Error discovering characteristics: \(error!.localizedDescription)")
+        if let error = error {
+            print("Error discovering characteristics: \(error.localizedDescription)")
             return
+        }
+        
+        guard let characteristics = service.characteristics, !characteristics.isEmpty else {
+            print("No characteristics found for service: \(service.uuid)")
+            return
+        }
+        
+        print("Discovered \(characteristics.count) characteristics for service: \(service.uuid)")
+        
+        // Log discovered characteristics
+        for characteristic in characteristics {
+            print("Characteristic: \(characteristic.uuid), properties: \(characteristic.properties)")
+            
+            // Subscribe to notifications if the characteristic supports it
+            if characteristic.properties.contains(.notify) || characteristic.properties.contains(.indicate) {
+                print("Subscribing to notifications for characteristic: \(characteristic.uuid)")
+                peripheral.setNotifyValue(true, for: characteristic)
+            }
+        }
+    }
+    
+    public func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        if let error = error {
+            print("Error updating characteristic value: \(error.localizedDescription)")
+            return
+        }
+        
+        guard let value = characteristic.value else {
+            print("No value for characteristic: \(characteristic.uuid)")
+            return
+        }
+        
+        print("Received data from characteristic \(characteristic.uuid): \(value.count) bytes")
+    }
+    
+    public func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        if let error = error {
+            print("Error writing characteristic value: \(error.localizedDescription)")
+        } else {
+            print("Successfully wrote value to characteristic: \(characteristic.uuid)")
         }
     }
     
     // MARK: - Dispose
     @objc public func dispose() {
-        // Aktif tarama varsa durdur
+        // Stop active scanning if any
         if isDiscovering {
             centralManager.stopScan()
             isDiscovering = false
         }
         
-        // Aktif bağlantı varsa kes
+        // Disconnect active connection if any
         if let connectedPeripheral = connectedPeripheral {
             centralManager.cancelPeripheralConnection(connectedPeripheral)
+            self.connectedPeripheral = nil
         }
+        
+        // Reset connection state
+        updateConnectionState(CONNECTION_STATE_DISCONNECTED)
+        
+        // Clean up discovered peripherals
+        discoveredPeripherals.removeAll()
+        
+        // Close the method channel
+        methodChannel = nil
     }
 }
