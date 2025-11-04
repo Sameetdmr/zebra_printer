@@ -33,5 +33,4 @@ flutter run
 ## Notes
 
 - Make sure to grant the necessary Bluetooth permissions for Android
-- iOS requires pairing through the Settings app
 - Requires a physical Zebra printer

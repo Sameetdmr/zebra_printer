@@ -8,7 +8,7 @@
 [![Pub Points](https://img.shields.io/pub/points/zebra_printer)](https://pub.dev/packages/zebra_printer/score)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A Flutter package for Zebra printers. Uses Zebra Link-OS SDK for Bluetooth connectivity and ZPL sending. Supports both Android and iOS platforms.
+A Flutter package for Zebra printers. Uses Zebra Link-OS SDK for Bluetooth connectivity and ZPL sending. Supports Android platform.
 
 ## Features
 
@@ -18,7 +18,7 @@ A Flutter package for Zebra printers. Uses Zebra Link-OS SDK for Bluetooth conne
 - Send ZPL code to printers
 - Check printer status
 - Get printer information
-- Cross-platform support (Android and iOS)
+- Android platform support
 
 ## Installation
 
@@ -43,20 +43,6 @@ Add the required permissions to your `android/app/src/main/AndroidManifest.xml` 
 
 For Android 12 and above, additional permissions may be required. For more information, see [Flutter Bluetooth Permissions](https://flutter.dev/docs/development/packages-and-plugins/plugin-api-migration#bluetooth-permissions).
 
-### iOS Setup
-
-Add the required permissions to your `ios/Runner/Info.plist` file:
-
-```xml
-<key>NSBluetoothAlwaysUsageDescription</key>
-<string>This app uses Bluetooth to connect to Zebra printers.</string>
-<key>NSBluetoothPeripheralUsageDescription</key>
-<string>This app uses Bluetooth to connect to Zebra printers.</string>
-<key>UISupportedExternalAccessoryProtocols</key>
-<array>
-    <string>com.zebra.rawport</string>
-</array>
-```
 
 ## Usage
 
@@ -295,35 +281,16 @@ String createQRCodeLabel(String data) {
 }
 ```
 
-## Zebra Link-OS SDK and Platform Differences
+## Zebra Link-OS SDK
 
-### Android
+This package uses the [Zebra Link-OS SDK](https://techdocs.zebra.com/link-os/2-14/android) for Android platform. For more detailed information, refer to Zebra's official documentation.
 
-On the Android platform, this package directly uses the [Zebra Link-OS SDK](https://techdocs.zebra.com/link-os/2-14/android). For more detailed information, refer to Zebra's official documentation.
+### Android Features
 
-### iOS
-
-On the iOS platform, communication with Zebra printers is established using the [Zebra Link-OS SDK](https://techdocs.zebra.com/link-os/2-13/ios). The `com.zebra.rawport` protocol is used for communication with Zebra printers on iOS, supporting MFi (Made For iPhone/iPad) certified Zebra printers.
-
-### Platform Differences
-
-There are some differences between iOS and Android platforms:
-
-1. **Device Pairing Operations**:
-   - Android: Programmatic pairing and unpairing are supported.
-   - iOS: Programmatic pairing is not supported; users need to pair devices through the iOS Settings app.
-
-2. **Device Identification**:
-   - Android: Devices are identified by MAC address.
-   - iOS: Devices are identified by serial number or UUID.
-
-3. **Printer Status Information**:
-   - Android: Detailed status information can be obtained through the Zebra SDK.
-   - iOS: Limited status information is available; in some cases, manual ZPL commands may need to be sent.
-
-4. **Connection Management**:
-   - Android: Both Bluetooth Classic and Bluetooth Low Energy are supported.
-   - iOS: MFi (Made For iPhone/iPad) certified Zebra printers are supported through the ExternalAccessory framework.
+- Programmatic pairing and unpairing are supported
+- Devices are identified by MAC address
+- Detailed status information can be obtained through the Zebra SDK
+- Both Bluetooth Classic and Bluetooth Low Energy are supported
 
 ## License
 

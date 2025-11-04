@@ -1,23 +1,21 @@
 # Changelog
 
+## 0.1.9
+
+* Removed iOS platform support
+* Package now supports Android platform only
+* Cleaned up iOS-related code and dependencies
+* Translated example app to English
+* Updated documentation to reflect Android-only support
+
 ## 0.1.8
 
-* Fixed iOS Bluetooth connection and disconnection issues
-* Improved iOS Bluetooth service discovery
-* Implemented proper ZPL printing using Zebra SDK in iOS
-* Fixed Objective-C bridge implementation for Zebra SDK
-* Fixed ARC (Automatic Reference Counting) issues in iOS code
-* Fixed Xcode build error for iOS simulator
-* Added better error handling and logging for iOS
+* Previous iOS-related changes (now removed)
 
 ## 0.1.7
 
-* Added iOS platform support
-* Added communication with Zebra printers on iOS using Zebra Link-OS SDK
-* Added BluetoothManager and PrinterManager classes for iOS
-* Added platform differences documentation
-* Updated README with iOS setup instructions
 * Translated documentation to English
+* Updated package documentation
 
 ## 0.1.6
 
