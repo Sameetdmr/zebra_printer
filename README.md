@@ -24,6 +24,36 @@ A Flutter package for Zebra printers. Uses Zebra Link-OS SDK for Bluetooth and N
 - 🔌 Pair and unpair with Bluetooth devices
 - 🎯 Generic Bluetooth connectivity for non-Zebra devices
 
+## 🏗️ Architecture & SDK Usage
+
+### Android Native Implementation Comparison
+
+| Feature | PrinterManager | BluetoothManager | Native SDK Used |
+|---------|----------------|------------------|-----------------|
+| **Discovery** | ✅ Zebra-specific discovery | ✅ All BT devices | **PrinterManager**: Zebra SDK (`BluetoothDiscoverer`, `NetworkDiscoverer`)<br>**BluetoothManager**: Android Bluetooth API |
+| **Connection** | ✅ Persistent connection | ✅ Generic BT connection | **PrinterManager**: Zebra SDK (`BluetoothConnection`)<br>**BluetoothManager**: Android Bluetooth API (`BluetoothSocket`) |
+| **Print (ZPL)** | ✅ Optimized for Zebra | ✅ Raw data send | **Both**: Zebra SDK (`Connection.write()`) |
+| **Printer Status** | ✅ Full status info | ❌ Not available | **PrinterManager**: Zebra SDK (`SGD.GET()`) |
+| **Printer Info** | ✅ Model, SN, firmware | ❌ Not available | **PrinterManager**: Zebra SDK (`SGD.GET()`, `ZebraPrinterFactory`) |
+| **Get Paired Devices** | ✅ All paired BT devices | ✅ All paired BT devices | **Both**: Android Bluetooth API (`BluetoothAdapter.getBondedDevices()`) |
+| **Unpair Device** | ✅ Remove pairing | ✅ Remove pairing | **Both**: Android Bluetooth API (Reflection: `device.removeBond()`) |
+| **Connection Caching** | ✅ 10s cache for fast prints | ❌ No caching | **PrinterManager**: Custom implementation with Zebra SDK |
+| **Language Detection** | ✅ ZPL/CPCL detection | ❌ Not available | **PrinterManager**: Zebra SDK (`printer.getPrinterControlLanguage()`) |
+
+### Why Two Managers?
+
+1. **PrinterManager (Recommended for Zebra)**: 
+   - Uses **Zebra Link-OS SDK** for all printer-specific operations
+   - Falls back to **Android Bluetooth API** only for operations not supported by Zebra SDK (pairing/unpairing)
+   - Optimized for Zebra printers with connection pooling and status monitoring
+   - Provides rich printer information and status
+
+2. **BluetoothManager (Generic Bluetooth)**:
+   - Uses **Android Bluetooth API** for generic Bluetooth operations
+   - Suitable for non-Zebra devices or when you need raw Bluetooth control
+   - Can discover and connect to any Bluetooth device
+   - Simpler implementation for basic printing needs
+
 ## Installation
 
 Add the package to your `pubspec.yaml` file:
@@ -375,120 +405,6 @@ String createReceipt(String storeName, List<String> items, String total) {
   zpl += "^XZ";
   
   return zpl;
-}
-```
-
-## 🏗️ Architecture & SDK Usage
-
-This package uses two different approaches for Android implementation:
-
-### Android Native Implementation Comparison
-
-| Feature | PrinterManager | BluetoothManager | Native SDK Used |
-|---------|----------------|------------------|-----------------|
-| **Discovery** | ✅ Zebra-specific discovery | ✅ All BT devices | **PrinterManager**: Zebra SDK (`BluetoothDiscoverer`, `NetworkDiscoverer`)<br>**BluetoothManager**: Android Bluetooth API |
-| **Connection** | ✅ Persistent connection | ✅ Generic BT connection | **PrinterManager**: Zebra SDK (`BluetoothConnection`)<br>**BluetoothManager**: Android Bluetooth API (`BluetoothSocket`) |
-| **Print (ZPL)** | ✅ Optimized for Zebra | ✅ Raw data send | **Both**: Zebra SDK (`Connection.write()`) |
-| **Printer Status** | ✅ Full status info | ❌ Not available | **PrinterManager**: Zebra SDK (`SGD.GET()`) |
-| **Printer Info** | ✅ Model, SN, firmware | ❌ Not available | **PrinterManager**: Zebra SDK (`SGD.GET()`, `ZebraPrinterFactory`) |
-| **Get Paired Devices** | ✅ All paired BT devices | ✅ All paired BT devices | **Both**: Android Bluetooth API (`BluetoothAdapter.getBondedDevices()`) |
-| **Unpair Device** | ✅ Remove pairing | ✅ Remove pairing | **Both**: Android Bluetooth API (Reflection: `device.removeBond()`) |
-| **Connection Caching** | ✅ 10s cache for fast prints | ❌ No caching | **PrinterManager**: Custom implementation with Zebra SDK |
-| **Language Detection** | ✅ ZPL/CPCL detection | ❌ Not available | **PrinterManager**: Zebra SDK (`printer.getPrinterControlLanguage()`) |
-
-### Why Two Managers?
-
-1. **PrinterManager (Recommended for Zebra)**: 
-   - Uses **Zebra Link-OS SDK** for all printer-specific operations
-   - Falls back to **Android Bluetooth API** only for operations not supported by Zebra SDK (pairing/unpairing)
-   - Optimized for Zebra printers with connection pooling and status monitoring
-   - Provides rich printer information and status
-
-2. **BluetoothManager (Generic Bluetooth)**:
-   - Uses **Android Bluetooth API** for generic Bluetooth operations
-   - Suitable for non-Zebra devices or when you need raw Bluetooth control
-   - Can discover and connect to any Bluetooth device
-   - Simpler implementation for basic printing needs
-
-### 📋 Detailed Method Comparison
-
-#### PrinterManager.java Implementation
-
-| Method | Zebra SDK Used | Android API Used | Notes |
-|--------|----------------|------------------|-------|
-| `startDiscovery()` | ✅ `BluetoothDiscoverer.findPrinters()`<br>✅ `NetworkDiscoverer.findPrinters()` | ❌ None | Uses Zebra SDK's discovery handlers |
-| `connect()` | ✅ `BluetoothConnection`<br>✅ `ZebraPrinterFactory.getInstance()` | ❌ None | Opens and validates Zebra printer connection |
-| `disconnect()` | ✅ `Connection.close()` | ❌ None | Closes Zebra SDK connection |
-| `sendZplToPrinter()` | ✅ `BluetoothConnection`<br>✅ `Connection.write()`<br>✅ `SGD.GET()` (readiness check) | ❌ None | Optimized with connection caching & retry logic |
-| `getPrinterInfo()` | ✅ `SGD.GET("device.product_name")`<br>✅ `SGD.GET("device.unique_id")`<br>✅ `printer.getPrinterControlLanguage()` | ❌ None | Retrieves detailed printer information |
-| `checkPrinterStatus()` | ✅ `SGD.GET("head.paper_out")`<br>✅ `SGD.GET("device.pause")`<br>✅ `SGD.GET("head.open")` | ❌ None | Real-time status monitoring |
-| `getPairedPrinters()` | ❌ None | ✅ `BluetoothAdapter.getBondedDevices()` | Zebra SDK doesn't provide paired device list |
-| `unpairPrinter()` | ❌ None | ✅ `device.removeBond()` (via Reflection) | Zebra SDK doesn't support unpairing |
-| `isConnected()` | ✅ Checks `activeConnection` state | ❌ None | Internal state management |
-
-#### BluetoothManager.java Implementation
-
-| Method | Zebra SDK Used | Android API Used | Notes |
-|--------|----------------|------------------|-------|
-| `startDiscovery()` | ❌ None | ✅ `BluetoothAdapter.startDiscovery()` | Discovers all Bluetooth devices |
-| `connect()` | ❌ None | ✅ `BluetoothSocket.connect()` | Generic Bluetooth connection |
-| `disconnect()` | ❌ None | ✅ `BluetoothSocket.close()` | Closes Bluetooth socket |
-| `getBondedDevices()` | ❌ None | ✅ `BluetoothAdapter.getBondedDevices()` | Returns all paired devices |
-| `pairDevice()` | ❌ None | ✅ `device.createBond()` (via Reflection) | Initiates pairing process |
-| `unpairDevice()` | ❌ None | ✅ `device.removeBond()` (via Reflection) | Removes pairing |
-
-### 🔑 Key Insights
-
-- **PrinterManager** is **99% Zebra SDK**, except for pairing operations which require Android API
-- **BluetoothManager** is **100% Android Bluetooth API**
-- Both can print to Zebra printers, but **PrinterManager** provides much richer functionality
-- **getPairedPrinters()** and **unpairPrinter()** use Android API in both managers because Zebra SDK doesn't expose these operations
-
-## API Reference
-
-### PrinterManager Methods
-
-| Method | Parameters | Return Type | Description |
-|--------|-----------|-------------|-------------|
-| `startDiscovery` | `type: String` (optional) | `Future<List<DiscoveredPrinter>>` | Discovers Zebra printers. Type: 'bluetooth', 'network', or 'both' (default) |
-| `stopDiscovery` | - | `Future<bool>` | Stops the discovery process |
-| `getPairedPrinters` | - | `Future<List<BluetoothDevice>>` | Returns all paired Bluetooth devices |
-| `unpairPrinter` | `address: String` | `Future<bool>` | Removes pairing with device |
-| `connect` | `address: String` | `Future<bool>` | Connects to a Zebra printer and keeps connection open |
-| `disconnect` | `address: String?` (optional) | `Future<bool>` | Disconnects from printer. If address is null, disconnects from current printer |
-| `isConnected` | `address: String?` (optional) | `Future<bool>` | Checks connection status. If address is null, checks general status |
-| `sendZplToPrinter` | `macAddress: String, zplData: String` | `Future<String>` | Sends ZPL code to printer (uses active connection or creates temporary one) |
-| `printTestLabel` | `macAddress: String` | `Future<String>` | Prints a test label |
-| `checkPrinterStatus` | `macAddress: String` | `Future<PrinterStatus>` | Gets printer status (paper, head, pause, temperature) |
-| `getPrinterInfo` | `macAddress: String` | `Future<String>` | Gets printer information (model, serial, firmware, language) |
-
-### PrinterManager Callbacks
-
-| Callback | Parameters | Description |
-|----------|-----------|-------------|
-| `onPrinterFound` | `DiscoveredPrinter` | Called when a printer is found during discovery |
-| `onDiscoveryFinished` | `List<DiscoveredPrinter>` | Called when discovery is complete |
-| `onConnectionStateChanged` | `Map<String, dynamic>` | Called when connection state changes |
-
-### Models
-
-#### DiscoveredPrinter
-```dart
-class DiscoveredPrinter {
-  final String type;          // "bluetooth" or "network"
-  final String address;       // MAC address or IP address
-  final String friendlyName;  // Printer name
-}
-```
-
-#### PrinterStatus
-```dart
-class PrinterStatus {
-  final bool isConnected;
-  final bool isPaperOut;
-  final bool isHeadOpen;
-  final bool isPaused;
-  final String? errorMessage;
 }
 ```
 
