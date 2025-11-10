@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1 - Documentation Update 📝
+
+* **Documentation Improvements**
+  * Moved Architecture & SDK Usage section before Installation for better flow
+  * Removed detailed method comparison tables for cleaner documentation
+  * Removed API Reference section (redundant with inline documentation)
+  * Kept essential comparison tables: Implementation Comparison + Why Two Managers
+  * README.md reduced from 18 KB to 14 KB for faster loading
+
 ## 0.2.0 - Production Ready Release 🚀
 
 ### Major Features & Improvements
