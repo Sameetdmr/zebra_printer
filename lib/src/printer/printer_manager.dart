@@ -285,11 +285,29 @@ class PrinterManager {
   /// Returns PrinterInfo object with model, serial number, firmware, and language information
   /// Throws an error if failed
   Future<PrinterInfo> getPrinterInfo(String macAddress) async {
+    print('📱 getPrinterInfo called with address: $macAddress');
+    
+    if (macAddress.isEmpty) {
+      throw Exception("MAC address cannot be empty");
+    }
+    
     try {
+      print('📱 Invoking native getPrinterInfo method...');
       final String result = await _channel.invokeMethod('getPrinterInfo', {'address': macAddress});
-      return PrinterInfo.fromString(result);
+      print('📱 Native method returned: $result');
+      
+      final printerInfo = PrinterInfo.fromString(result);
+      print('📱 PrinterInfo parsed successfully: ${printerInfo.toCompactString()}');
+      return printerInfo;
     } on PlatformException catch (e) {
+      print('❌ PlatformException in getPrinterInfo:');
+      print('   Code: ${e.code}');
+      print('   Message: ${e.message}');
+      print('   Details: ${e.details}');
       throw Exception("Printer Info Error (${e.code}): ${e.message}");
+    } catch (e) {
+      print('❌ Unexpected error in getPrinterInfo: $e');
+      throw Exception("Printer Info Error: $e");
     }
   }
 

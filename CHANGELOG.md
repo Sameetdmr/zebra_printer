@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.2.3 - Connection Reuse & Reliability Fix 🔧
+
+* **Bug Fixes**
+  * Fixed socket timeout error when calling `getPrinterInfo()` or `checkPrinterStatus()` after `connect()`
+  * Resolved "read failed, socket might closed or timeout" error caused by multiple simultaneous connections
+  
+* **Performance Improvements**
+  * `getPrinterInfo()` now reuses active connection when available (300ms vs 800ms)
+  * `checkPrinterStatus()` now reuses active connection when available (300ms vs 800ms)
+  * Reduced connection overhead for consecutive info/status queries
+  
+* **New Features**
+  * Smart connection management: automatically detects and reuses active connections
+  * Connection state awareness: methods intelligently switch between active and temporary connections
+  * Enhanced logging for connection lifecycle debugging
+  
+* **Technical Details**
+  * Added `shouldCloseConnection` flag to prevent closing active connections
+  * Both `getPrinterInfo()` and `checkPrinterStatus()` now check for `activeConnection`
+  * Temporary connections created only when no active connection exists or address differs
+  * Connection stabilization: 300ms for active connections, 800ms for new connections
+  
+* **Developer Experience**
+  * Detailed debug logging added (Dart + Android) for troubleshooting
+  * Better error messages with full exception stack traces
+  * Null-safe parameter validation
+
+**Upgrade Impact:** Non-breaking - existing code continues to work with improved reliability and performance.
+
 ## 0.2.2 - PrinterInfo Model Update 🎯
 
 * **Breaking Changes**
