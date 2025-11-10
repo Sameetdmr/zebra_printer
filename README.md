@@ -16,8 +16,9 @@ A Flutter package for Zebra printers. Uses Zebra Link-OS SDK for Bluetooth and N
 - 🔍 **Discover Zebra Printers** - Find printers via Bluetooth & Network using Zebra SDK
 - 🔗 **Persistent Connection** - Connect once, print multiple times
 - 📄 **Print ZPL Labels** - Send ZPL commands directly
-- 📊 **Check Printer Status** - Get real-time printer status
-- ℹ️ **Get Printer Info** - Retrieve printer details and firmware info
+- 📊 **Check Printer Status** - Get real-time printer status (paper, head, pause)
+- ℹ️ **Get Printer Info** - Type-safe `PrinterInfo` model with device details, firmware, language
+- 🎯 **Type-Safe Models** - Structured models for printer info, status, and devices
 
 ### Generic Bluetooth Features (via BluetoothManager - Optional)
 - 📡 Scan and discover all Bluetooth devices
@@ -195,8 +196,28 @@ try {
 
 ```dart
 try {
-  String info = await printerManager.getPrinterInfo('AC:3F:A4:XX:XX:XX');
-  print('Printer Info: $info');
+  PrinterInfo info = await printerManager.getPrinterInfo('AC:3F:A4:XX:XX:XX');
+  
+  // Type-safe access to printer details
+  print('Model: ${info.model}');
+  print('Serial Number: ${info.serialNumber}');
+  print('Firmware: ${info.firmware}');
+  print('Language: ${info.language}'); // PrinterLanguage enum (ZPL/CPCL/Unknown)
+  
+  // Or use formatted output
+  print(info.toString());
+  // Output:
+  // PrinterInfo{
+  //   Model: ZD421
+  //   Serial Number: XXXXXXXXXXXX
+  //   Firmware: V84.20.11Z
+  //   Language: ZPL
+  // }
+  
+  // Compact format
+  print(info.toCompactString());
+  // Output: ZD421 (S/N: XXXXXXXXXXXX) - V84.20.11Z - ZPL
+  
 } catch (e) {
   print('Info error: $e');
 }
@@ -342,6 +363,126 @@ await bluetoothManager.disconnect();
 
 // Clean up
 bluetoothManager.dispose();
+```
+
+## 📦 Models
+
+The package provides type-safe model classes for structured data access:
+
+### PrinterInfo
+
+Contains detailed information about a connected Zebra printer.
+
+```dart
+class PrinterInfo {
+  final String model;              // Printer model name (e.g., "ZD421")
+  final String serialNumber;       // Printer serial number
+  final String firmware;           // Firmware version (e.g., "V84.20.11Z")
+  final PrinterLanguage language;  // ZPL, CPCL, or Unknown
+  final String? rawInfo;           // Original raw string (for debugging)
+}
+```
+
+**PrinterLanguage Enum:**
+```dart
+enum PrinterLanguage {
+  zpl,      // Zebra Programming Language
+  cpcl,     // Common Printer Command Language  
+  unknown
+}
+```
+
+**Usage Example:**
+```dart
+PrinterInfo info = await printerManager.getPrinterInfo('AC:3F:A4:XX:XX:XX');
+
+// Type-safe access
+print(info.model);        // "ZD421"
+print(info.serialNumber); // "XXXXXXXXXXXX"
+print(info.firmware);     // "V84.20.11Z"
+
+// Enum comparison
+if (info.language == PrinterLanguage.zpl) {
+  print('This is a ZPL printer');
+}
+
+// Formatted output
+print(info.toString());
+print(info.toCompactString());
+print(info.toJson());
+```
+
+### PrinterStatus
+
+Real-time status information from the printer.
+
+```dart
+class PrinterStatus {
+  final bool isConnected;
+  final bool isPaperOut;
+  final bool isHeadOpen;
+  final bool isPaused;
+}
+```
+
+**Usage Example:**
+```dart
+PrinterStatus status = await printerManager.checkPrinterStatus('AC:3F:A4:XX:XX:XX');
+
+if (status.isPaperOut) {
+  print('⚠️ Please load paper');
+}
+if (status.isHeadOpen) {
+  print('⚠️ Close printer head');
+}
+```
+
+### BluetoothDevice
+
+Generic Bluetooth device information.
+
+```dart
+class BluetoothDevice {
+  final String name;
+  final String address;
+  final DeviceType type;      // CLASSIC, LE, DUAL, UNKNOWN
+  final BondState bondState;  // BONDED, BONDING, NONE
+}
+```
+
+**Usage Example:**
+```dart
+List<BluetoothDevice> devices = await printerManager.getPairedPrinters();
+
+for (var device in devices) {
+  print('${device.name} - ${device.address}');
+  if (device.bondState == BondState.bonded) {
+    print('✓ Paired');
+  }
+}
+```
+
+### DiscoveredPrinter
+
+Zebra printer discovered via Zebra SDK.
+
+```dart
+class DiscoveredPrinter {
+  final String type;       // "bluetooth" or "network"
+  final String address;    // MAC address or IP
+  final String? name;      // Friendly name
+}
+```
+
+**Usage Example:**
+```dart
+printerManager.onPrinterFound.listen((printer) {
+  if (printer.type == 'bluetooth') {
+    print('Found Bluetooth Printer: ${printer.name} (${printer.address})');
+  } else {
+    print('Found Network Printer: ${printer.address}');
+  }
+});
 ```
 
 ## ZPL Examples
