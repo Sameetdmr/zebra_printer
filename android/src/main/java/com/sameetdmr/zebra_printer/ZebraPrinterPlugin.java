@@ -19,7 +19,8 @@ public class ZebraPrinterPlugin implements FlutterPlugin, MethodCallHandler {
   public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
     // Printer channel
     printerChannel = new MethodChannel(flutterPluginBinding.getBinaryMessenger(), "com.sameetdmr.zebra_printer/zebra_print");
-    printerManager = new PrinterManager();
+    printerManager = new PrinterManager(flutterPluginBinding.getApplicationContext());
+    printerManager.setMethodChannel(printerChannel);
     printerChannel.setMethodCallHandler(this);
     
     // Bluetooth channel

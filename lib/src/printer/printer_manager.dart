@@ -1,7 +1,26 @@
 import 'package:flutter/services.dart';
 import '../models/printer_status.dart';
+import '../models/bluetooth_device.dart';
 
-/// Class for communicating with Zebra printers
+/// Discovered Zebra Printer model
+class DiscoveredPrinter {
+  final String type; // "bluetooth" or "network"
+  final String address;
+  final String friendlyName;
+
+  DiscoveredPrinter({required this.type, required this.address, required this.friendlyName});
+
+  factory DiscoveredPrinter.fromMap(Map<dynamic, dynamic> map) {
+    return DiscoveredPrinter(type: map['type'] as String? ?? '', address: map['address'] as String? ?? '', friendlyName: map['friendlyName'] as String? ?? '');
+  }
+
+  @override
+  String toString() {
+    return 'DiscoveredPrinter{type: $type, address: $address, friendlyName: $friendlyName}';
+  }
+}
+
+/// Class for communicating with Zebra printers using Link-OS SDK
 class PrinterManager {
   /// Singleton instance
   static final PrinterManager _instance = PrinterManager._internal();
@@ -10,10 +29,198 @@ class PrinterManager {
   factory PrinterManager() => _instance;
 
   /// Private constructor
-  PrinterManager._internal();
+  PrinterManager._internal() {
+    _channel.setMethodCallHandler(_handleMethodCall);
+  }
 
   /// Method channel
   static const MethodChannel _channel = MethodChannel('com.sameetdmr.zebra_printer/zebra_print');
+
+  /// Callback for when a printer is found during discovery
+  void Function(DiscoveredPrinter printer)? onPrinterFound;
+
+  /// Callback for when discovery is finished
+  void Function(List<DiscoveredPrinter> printers)? onDiscoveryFinished;
+
+  /// Callback for when connection state changes
+  void Function(Map<String, dynamic> info)? onConnectionStateChanged;
+
+  /// Method call handler for callbacks from native side
+  Future<dynamic> _handleMethodCall(MethodCall call) async {
+    switch (call.method) {
+      case 'onPrinterFound':
+        if (onPrinterFound != null && call.arguments != null) {
+          final printer = DiscoveredPrinter.fromMap(call.arguments as Map<dynamic, dynamic>);
+          onPrinterFound!(printer);
+        } else {}
+        break;
+      case 'onDiscoveryFinished':
+        if (onDiscoveryFinished != null && call.arguments != null) {
+          final List<dynamic> printersList = call.arguments as List<dynamic>;
+          final List<DiscoveredPrinter> printers = printersList.map((e) => DiscoveredPrinter.fromMap(e as Map<dynamic, dynamic>)).toList();
+          onDiscoveryFinished!(printers);
+        } else {}
+        break;
+      case 'onConnectionStateChanged':
+        if (onConnectionStateChanged != null && call.arguments != null) {
+          final info = Map<String, dynamic>.from(call.arguments as Map);
+          onConnectionStateChanged!(info);
+        } else {}
+        break;
+      default:
+        break;
+    }
+  }
+
+  // ==================== DISCOVERY METHODS ====================
+
+  /// Starts discovering Zebra printers using Zebra Link-OS SDK
+  ///
+  /// [type] Discovery type: "bluetooth", "network", or "both" (default)
+  ///
+  /// Returns a list of discovered Zebra printers
+  Future<List<DiscoveredPrinter>> startDiscovery({String type = 'both'}) async {
+    try {
+      print('[PrinterManager] startDiscovery called with type: $type');
+      final result = await _channel.invokeMethod('startDiscovery', {'type': type});
+
+      if (result == null) {
+        print('[PrinterManager] startDiscovery returned null');
+        return [];
+      }
+
+      final List<dynamic> printersList = result as List<dynamic>;
+      print('[PrinterManager] startDiscovery found ${printersList.length} printers');
+
+      final printers = printersList.map((e) => DiscoveredPrinter.fromMap(e as Map<dynamic, dynamic>)).toList();
+
+      return printers;
+    } on PlatformException catch (e) {
+      print('[PrinterManager] startDiscovery error: ${e.code} - ${e.message}');
+      throw Exception("Discovery Error (${e.code}): ${e.message}");
+    } catch (e) {
+      print('[PrinterManager] startDiscovery unexpected error: $e');
+      rethrow;
+    }
+  }
+
+  /// Stops the printer discovery process
+  Future<bool> stopDiscovery() async {
+    try {
+      final result = await _channel.invokeMethod('stopDiscovery');
+      return result as bool? ?? false;
+    } on PlatformException catch (e) {
+      throw Exception("Stop Discovery Error (${e.code}): ${e.message}");
+    }
+  }
+
+  // ==================== CONNECTION METHODS ====================
+
+  /// Connects to a Zebra printer and maintains the connection
+  ///
+  /// [address] Printer address (MAC address for Bluetooth or IP for Network)
+  ///
+  /// Returns true if connected successfully, false otherwise
+  Future<bool> connect(String address) async {
+    try {
+      print('[PrinterManager] connect called for address: $address');
+      final result = await _channel.invokeMethod('connect', {'address': address});
+      print('[PrinterManager] connect result: $result');
+      return result as bool? ?? false;
+    } on PlatformException catch (e) {
+      print('[PrinterManager] connect error: ${e.code} - ${e.message}');
+      throw Exception("Connection Error (${e.code}): ${e.message}");
+    }
+  }
+
+  /// Disconnects from a Zebra printer
+  ///
+  /// [address] Optional printer address. If null, disconnects from currently connected printer
+  ///
+  /// Returns true if disconnected successfully, false otherwise
+  Future<bool> disconnect({String? address}) async {
+    try {
+      print('[PrinterManager] disconnect called for address: $address');
+      final result = await _channel.invokeMethod('disconnect', {'address': address});
+      print('[PrinterManager] disconnect result: $result');
+      return result as bool? ?? false;
+    } on PlatformException catch (e) {
+      print('[PrinterManager] disconnect error: ${e.code} - ${e.message}');
+      throw Exception("Disconnection Error (${e.code}): ${e.message}");
+    }
+  }
+
+  /// Checks if printer is currently connected
+  ///
+  /// [address] Optional printer address to check. If null, checks general connection status
+  ///
+  /// Returns true if connected, false otherwise
+  Future<bool> isConnected({String? address}) async {
+    try {
+      print('[PrinterManager] isConnected called for address: $address');
+      final result = await _channel.invokeMethod('isConnected', {'address': address});
+      print('[PrinterManager] isConnected result: $result');
+      return result as bool? ?? false;
+    } on PlatformException catch (e) {
+      print('[PrinterManager] isConnected error: ${e.code} - ${e.message}');
+      throw Exception("IsConnected Error (${e.code}): ${e.message}");
+    }
+  }
+
+  /// Unpairs a Bluetooth device
+  /// Uses Android Bluetooth API to remove bonding
+  ///
+  /// Returns true if successful, throws exception otherwise
+  Future<bool> unpairPrinter(String address) async {
+    try {
+      print('[PrinterManager] unpairPrinter called for: $address');
+      final result = await _channel.invokeMethod('unpairPrinter', {'address': address});
+      print('[PrinterManager] unpairPrinter successful');
+      return result as bool;
+    } on PlatformException catch (e) {
+      print('[PrinterManager] unpairPrinter error: ${e.code} - ${e.message}');
+      throw Exception("Unpair Printer Error (${e.code}): ${e.message}");
+    }
+  }
+
+  /// Gets paired (bonded) Bluetooth devices
+  /// Uses Android Bluetooth API to get bonded devices
+  ///
+  /// Returns a list of paired Bluetooth devices as BluetoothDevice objects
+  Future<List<BluetoothDevice>> getPairedPrinters() async {
+    try {
+      print('[PrinterManager] getPairedPrinters called');
+      final result = await _channel.invokeMethod('getPairedPrinters');
+
+      if (result == null) {
+        print('[PrinterManager] getPairedPrinters returned null');
+        return [];
+      }
+
+      final List<dynamic> devicesList = result as List<dynamic>;
+      print('[PrinterManager] getPairedPrinters found ${devicesList.length} printers');
+
+      // Map'i BluetoothDevice'a dönüştür
+      final devices =
+          devicesList.map((deviceMap) {
+            final map = Map<String, dynamic>.from(deviceMap as Map);
+            return BluetoothDevice(
+              name: map['friendlyName'] as String?,
+              address: map['address'] as String,
+              type: BluetoothDeviceType.classic, // Paired devices are classic Bluetooth
+              bondState: BluetoothBondState.bonded, // All are bonded
+              isConnected: false, // Initial state
+            );
+          }).toList();
+
+      return devices;
+    } on PlatformException catch (e) {
+      print('[PrinterManager] getPairedPrinters error: ${e.code} - ${e.message}');
+      throw Exception("Get Paired Printers Error (${e.code}): ${e.message}");
+    }
+  }
+
+  // ==================== PRINTING METHODS ====================
 
   /// Sends ZPL code to the printer
   ///

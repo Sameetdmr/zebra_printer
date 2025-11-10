@@ -1,4 +1,4 @@
-group 'com.example.zebra_printer'
+group 'com.sameetdmr.zebra_printer'
 version '1.0'
 
 buildscript {
@@ -41,5 +41,11 @@ android {
 
     dependencies {
         implementation fileTree(dir: 'libs', include: ['*.jar'])
+        // Jackson dependencies for Zebra SDK
+        implementation 'com.fasterxml.jackson.core:jackson-core:2.14.2'
+        implementation 'com.fasterxml.jackson.core:jackson-databind:2.14.2'
+        implementation 'com.fasterxml.jackson.core:jackson-annotations:2.14.2'
+        // Apache Commons for Zebra SDK
+        implementation 'org.apache.commons:commons-lang3:3.12.0'
     }
 }
