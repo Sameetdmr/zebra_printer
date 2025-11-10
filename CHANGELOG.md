@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.2 - PrinterInfo Model Update 🎯
+
+* **Breaking Changes**
+  * `getPrinterInfo()` now returns `PrinterInfo` model instead of raw `String`
+  
+* **New Features**
+  * Added `PrinterInfo` model class with structured printer information
+    * `model`: Printer model name (e.g., "ZD421")
+    * `serialNumber`: Printer serial number
+    * `firmware`: Firmware version
+    * `language`: PrinterLanguage enum (ZPL/CPCL/Unknown)
+    * `rawInfo`: Original raw string (for debugging)
+  * Added `PrinterLanguage` enum for type-safe language detection
+  * Type-safe access to printer information with autocomplete support
+  
+* **Improvements**
+  * Better type safety for printer information
+  * Improved example app with formatted printer info dialog
+  * Added helper methods: `toCompactString()`, `toJson()`, `fromMap()`
+  
+* **Developer Experience**
+  * IDE autocomplete support for printer info fields
+  * Null-safe implementation
+  * Clean, structured data instead of string parsing
+  * Better testability
+
 ## 0.2.1 - Documentation Update 📝
 
 * **Documentation Improvements**

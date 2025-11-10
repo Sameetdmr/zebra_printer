@@ -269,15 +269,57 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
     if (_selectedPrinter == null) return;
 
     try {
-      String info = await widget.printerManager.getPrinterInfo(_selectedPrinter!.address);
+      PrinterInfo info = await widget.printerManager.getPrinterInfo(_selectedPrinter!.address);
       if (mounted) {
-        showDialog(context: context, builder: (context) => AlertDialog(title: const Text('Printer Info'), content: Text(info), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))]));
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Printer Info'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildInfoRow('Model', info.model),
+                const SizedBox(height: 8),
+                _buildInfoRow('Serial Number', info.serialNumber),
+                const SizedBox(height: 8),
+                _buildInfoRow('Firmware', info.firmware),
+                const SizedBox(height: 8),
+                _buildInfoRow('Language', info.language.toString()),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
       }
     } catch (e) {
       setState(() {
         _status = 'Info error: $e';
       });
     }
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 100,
+          child: Text(
+            '$label:',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+        Expanded(
+          child: Text(value),
+        ),
+      ],
+    );
   }
 
   @override

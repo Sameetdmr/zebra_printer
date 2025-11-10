@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import '../models/printer_status.dart';
 import '../models/bluetooth_device.dart';
+import '../models/printer_info.dart';
 
 /// Discovered Zebra Printer model
 class DiscoveredPrinter {
@@ -281,11 +282,12 @@ class PrinterManager {
   ///
   /// [macAddress] MAC address of the printer
   ///
-  /// Returns printer information, throws an error if failed
-  Future<String> getPrinterInfo(String macAddress) async {
+  /// Returns PrinterInfo object with model, serial number, firmware, and language information
+  /// Throws an error if failed
+  Future<PrinterInfo> getPrinterInfo(String macAddress) async {
     try {
       final String result = await _channel.invokeMethod('getPrinterInfo', {'address': macAddress});
-      return result;
+      return PrinterInfo.fromString(result);
     } on PlatformException catch (e) {
       throw Exception("Printer Info Error (${e.code}): ${e.message}");
     }
