@@ -640,23 +640,52 @@ public class PrinterManager {
         
         try {
             // ✅ AKILLI BAĞLANTI: Eğer activeConnection varsa ve aynı adrese bağlıysa onu kullan
-            boolean useActiveConnection = (activeConnection != null && 
+            boolean hasActiveConnection = (activeConnection != null && 
                                           connectedAddress != null && 
                                           connectedAddress.equals(macAddress));
             
-            if (useActiveConnection) {
-                Log.d(TAG, "Using existing active connection to: " + macAddress);
-                connection = activeConnection;
-                shouldCloseConnection = false; // Aktif bağlantıyı kapatma!
-                
-                // Küçük bir bekleme - bağlantının hazır olduğundan emin ol
+            // Bağlantının gerçekten açık olup olmadığını kontrol et
+            boolean useActiveConnection = false;
+            if (hasActiveConnection) {
                 try {
-                    Thread.sleep(300);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
+                    // Bağlantı gerçekten açık mı test et
+                    if (activeConnection.isConnected()) {
+                        Log.d(TAG, "Using existing active connection to: " + macAddress);
+                        connection = activeConnection;
+                        shouldCloseConnection = false; // Aktif bağlantıyı kapatma!
+                        useActiveConnection = true;
+                        
+                        // Küçük bir bekleme - bağlantının hazır olduğundan emin ol
+                        try {
+                            Thread.sleep(300);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    } else {
+                        Log.w(TAG, "Active connection exists but is closed, will create new connection");
+                        // Eski bağlantıyı temizle
+                        try {
+                            activeConnection.close();
+                        } catch (Exception e) {
+                            // Ignore
+                        }
+                        activeConnection = null;
+                        connectedAddress = null;
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "Error checking connection status: " + e.getMessage());
+                    // Eski bağlantıyı temizle
+                    try {
+                        if (activeConnection != null) activeConnection.close();
+                    } catch (Exception ex) {
+                        // Ignore
+                    }
+                    activeConnection = null;
+                    connectedAddress = null;
                 }
-                
-            } else {
+            }
+            
+            if (!useActiveConnection) {
                 // ✅ YENİ BAĞLANTI: Aktif bağlantı yok veya farklı bir yazıcı
                 Log.d(TAG, "Opening new connection to: " + macAddress);
                 
@@ -769,39 +798,103 @@ public class PrinterManager {
     private String getPrinterInfo(String macAddress) 
             throws ConnectionException, ZebraPrinterLanguageUnknownException {
         
+        Log.d(TAG, "getPrinterInfo called");
+        Log.d(TAG, "Getting printer info for: " + macAddress);
+        
         Connection connection = null;
+        boolean shouldCloseConnection = false;
         StringBuilder info = new StringBuilder();
         
         try {
-            connection = new BluetoothConnection(macAddress);
-            connection.open();
+            Log.d(TAG, "getPrinterInfo method started for: " + macAddress);
             
+            // ✅ AKTİF BAĞLANTIYI KULLAN: Eğer zaten bağlıysak yeni bağlantı açma!
+            boolean hasActiveConnection = (activeConnection != null && 
+                                          connectedAddress != null && 
+                                          connectedAddress.equals(macAddress));
+            
+            boolean useActiveConnection = false;
+            if (hasActiveConnection) {
+                try {
+                    // Bağlantı gerçekten açık mı test et
+                    if (activeConnection.isConnected()) {
+                        Log.d(TAG, "Using existing active connection for getPrinterInfo");
+                        connection = activeConnection;
+                        shouldCloseConnection = false; // Aktif bağlantıyı kapatma!
+                        useActiveConnection = true;
+                        
+                        // Küçük bir bekleme - bağlantının hazır olduğundan emin ol
+                        try {
+                            Thread.sleep(300);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    } else {
+                        Log.w(TAG, "Active connection for getPrinterInfo exists but is closed");
+                        activeConnection = null;
+                        connectedAddress = null;
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "Error checking connection in getPrinterInfo: " + e.getMessage());
+                    activeConnection = null;
+                    connectedAddress = null;
+                }
+            }
+            
+            if (!useActiveConnection) {
+                // ✅ YENİ BAĞLANTI: Aktif bağlantı yok veya farklı bir yazıcı
+                Log.d(TAG, "Opening new connection for getPrinterInfo");
+                connection = new BluetoothConnection(macAddress);
+                connection.open();
+                shouldCloseConnection = true; // Yeni bağlantıyı sonra kapat
+                
+                // Bağlantı stabilizasyonu
+                try {
+                    Thread.sleep(800);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            
+            Log.d(TAG, "Creating ZebraPrinter instance...");
             // Zebra Printer nesnesini oluştur
             ZebraPrinter printer = ZebraPrinterFactory.getInstance(connection);
             
+            Log.d(TAG, "Getting printer information via SGD commands...");
             // SGD komutları ile yazıcı bilgilerini al
             String model = SGD.GET("device.product_name", connection);
+            Log.d(TAG, "Model: " + model);
+            
             String serialNumber = SGD.GET("device.unique_id", connection);
+            Log.d(TAG, "Serial: " + serialNumber);
+            
             String firmware = SGD.GET("appl.name", connection);
+            Log.d(TAG, "Firmware: " + firmware);
             
             info.append("Model: ").append(model).append("\n");
             info.append("Seri No: ").append(serialNumber).append("\n");
             info.append("Firmware: ").append(firmware).append("\n");
             
+            Log.d(TAG, "Getting printer control language...");
             // Yazıcı dili bilgisini al
             PrinterLanguage language = printer.getPrinterControlLanguage();
+            Log.d(TAG, "Language: " + language.toString());
             info.append("Dil: ").append(language.toString()).append("\n");
             
+            Log.d(TAG, "Printer info collected successfully: " + info.toString().trim());
             return info.toString();
             
         } finally {
-            if (connection != null) {
+            // ✅ BAĞLANTIYI KAPAT: Sadece yeni açtığımız bağlantıları kapat
+            if (shouldCloseConnection && connection != null) {
                 try {
                     connection.close();
+                    Log.d(TAG, "Temporary connection closed");
                 } catch (ConnectionException e) {
-                    // Kapatma hatası
                     Log.e(TAG, "Connection close error: " + e.getMessage());
                 }
+            } else if (connection != null) {
+                Log.d(TAG, "Active connection kept open");
             }
         }
     }
@@ -815,13 +908,62 @@ public class PrinterManager {
     private Map<String, Object> checkPrinterStatus(String macAddress) 
             throws ConnectionException {
         
+        Log.d(TAG, "checkPrinterStatus called for: " + macAddress);
+        
         Connection connection = null;
+        boolean shouldCloseConnection = false;
         Map<String, Object> statusMap = new HashMap<>();
         
         try {
-            connection = new BluetoothConnection(macAddress);
-            connection.open();
+            // ✅ AKTİF BAĞLANTIYI KULLAN: Eğer zaten bağlıysak yeni bağlantı açma!
+            boolean hasActiveConnection = (activeConnection != null && 
+                                          connectedAddress != null && 
+                                          connectedAddress.equals(macAddress));
             
+            boolean useActiveConnection = false;
+            if (hasActiveConnection) {
+                try {
+                    // Bağlantı gerçekten açık mı test et
+                    if (activeConnection.isConnected()) {
+                        Log.d(TAG, "Using existing active connection for checkPrinterStatus");
+                        connection = activeConnection;
+                        shouldCloseConnection = false; // Aktif bağlantıyı kapatma!
+                        useActiveConnection = true;
+                        
+                        // Küçük bir bekleme - bağlantının hazır olduğundan emin ol
+                        try {
+                            Thread.sleep(300);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    } else {
+                        Log.w(TAG, "Active connection for checkPrinterStatus exists but is closed");
+                        activeConnection = null;
+                        connectedAddress = null;
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "Error checking connection in checkPrinterStatus: " + e.getMessage());
+                    activeConnection = null;
+                    connectedAddress = null;
+                }
+            }
+            
+            if (!useActiveConnection) {
+                // ✅ YENİ BAĞLANTI: Aktif bağlantı yok veya farklı bir yazıcı
+                Log.d(TAG, "Opening new connection for checkPrinterStatus");
+                connection = new BluetoothConnection(macAddress);
+                connection.open();
+                shouldCloseConnection = true; // Yeni bağlantıyı sonra kapat
+                
+                // Bağlantı stabilizasyonu
+                try {
+                    Thread.sleep(800);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            
+            Log.d(TAG, "Getting printer status via SGD commands...");
             // Yazıcı durumunu al
             boolean isPaperOut = "1".equals(SGD.GET("head.paper_out", connection));
             boolean isPaused = "1".equals(SGD.GET("device.pause", connection));
@@ -837,20 +979,25 @@ public class PrinterManager {
             statusMap.put("temperature", temperature);
             statusMap.put("isConnected", true);
             
+            Log.d(TAG, "Printer status retrieved successfully");
             return statusMap;
             
         } catch (Exception e) {
+            Log.e(TAG, "Error getting printer status: " + e.getMessage());
             statusMap.put("isConnected", false);
             statusMap.put("error", e.getMessage());
             return statusMap;
         } finally {
-            if (connection != null) {
+            // ✅ BAĞLANTIYI KAPAT: Sadece yeni açtığımız bağlantıları kapat
+            if (shouldCloseConnection && connection != null) {
                 try {
                     connection.close();
+                    Log.d(TAG, "Temporary connection closed");
                 } catch (ConnectionException e) {
-                    // Kapatma hatası
                     Log.e(TAG, "Connection close error: " + e.getMessage());
                 }
+            } else if (connection != null) {
+                Log.d(TAG, "Active connection kept open");
             }
         }
     }

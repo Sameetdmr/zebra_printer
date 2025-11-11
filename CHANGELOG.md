@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.2.4 - Connection Validity Check & Broken Pipe Fix 🛡️
+
+* **Critical Bug Fix**
+  * Fixed "Broken pipe" error when calling `sendZplToPrinter()` after `getPrinterInfo()`
+  * Added connection validity check before reusing `activeConnection`
+  * Resolved socket state corruption issue caused by SGD commands
+  
+* **Connection Management Improvements**
+  * `activeConnection` now verified with `isConnected()` before use
+  * Automatic connection recovery when active connection is closed
+  * Stale connections automatically detected and recreated
+  * All three methods now include connection validity checks:
+    - `sendZplToPrinter()`
+    - `getPrinterInfo()`
+    - `checkPrinterStatus()`
+  
+* **Reliability Enhancements**
+  * Connection state validation in all reuse scenarios
+  * Graceful handling of closed connections
+  * 10-second connection cache still active for fast reconnection
+  * Better error logging for connection state issues
+  
+* **Technical Details**
+  * Added `isConnected()` check before using `activeConnection`
+  * Automatic cleanup of stale connection references
+  * Connection state verified in real-time, not just by reference
+  * Fast path (500ms) for recent connections still applies
+  
+* **Flow Example**
+  ```
+  connect() → getPrinterInfo() → sendZplToPrinter()
+  ✅ No "Broken pipe" error
+  ✅ Automatic recovery if connection breaks
+  ✅ Fast execution with connection cache
+  ```
+
+**Upgrade Impact:** Non-breaking - Critical reliability fix for production use.
+
 ## 0.2.3 - Connection Reuse & Reliability Fix 🔧
 
 * **Bug Fixes**
