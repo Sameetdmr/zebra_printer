@@ -113,7 +113,7 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
     });
 
     try {
-      final result = await widget.printerManager.startDiscovery(type: 'bluetooth');
+      final result = await widget.printerManager.startDiscovery(type: DiscoveryType.bluetooth);
 
       // Eğer sonuç boşsa ve callback'ten de veri gelmediyse
       if (result.isEmpty && _printers.isEmpty) {
@@ -141,11 +141,7 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
     try {
       final paired = await widget.printerManager.getPairedPrinters();
       setState(() {
-        _printers = paired.map((device) => DiscoveredPrinter(
-          address: device.address,
-          friendlyName: device.name ?? device.address,
-          type: 'bluetooth',
-        )).toList();
+        _printers = paired.map((device) => DiscoveredPrinter(address: device.address, friendlyName: device.name ?? device.address, type: 'bluetooth')).toList();
         _status = 'Loaded ${paired.length} paired device(s)';
       });
     } catch (e) {
@@ -273,28 +269,24 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
       if (mounted) {
         showDialog(
           context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Printer Info'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildInfoRow('Model', info.model),
-                const SizedBox(height: 8),
-                _buildInfoRow('Serial Number', info.serialNumber),
-                const SizedBox(height: 8),
-                _buildInfoRow('Firmware', info.firmware),
-                const SizedBox(height: 8),
-                _buildInfoRow('Language', info.language.toString()),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK'),
+          builder:
+              (context) => AlertDialog(
+                title: const Text('Printer Info'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildInfoRow('Model', info.model),
+                    const SizedBox(height: 8),
+                    _buildInfoRow('Serial Number', info.serialNumber),
+                    const SizedBox(height: 8),
+                    _buildInfoRow('Firmware', info.firmware),
+                    const SizedBox(height: 8),
+                    _buildInfoRow('Language', info.language.toString()),
+                  ],
+                ),
+                actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
               ),
-            ],
-          ),
         );
       }
     } catch (e) {
@@ -305,21 +297,7 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
   }
 
   Widget _buildInfoRow(String label, String value) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 100,
-          child: Text(
-            '$label:',
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-        ),
-        Expanded(
-          child: Text(value),
-        ),
-      ],
-    );
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [SizedBox(width: 100, child: Text('$label:', style: const TextStyle(fontWeight: FontWeight.bold))), Expanded(child: Text(value))]);
   }
 
   @override
@@ -392,12 +370,7 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               if (isSelected && _isConnected) const Icon(Icons.check_circle, color: Colors.green),
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline, size: 20),
-                                color: Colors.red,
-                                onPressed: () => _unpairPrinter(printer),
-                                tooltip: 'Unpair',
-                              ),
+                              IconButton(icon: const Icon(Icons.delete_outline, size: 20), color: Colors.red, onPressed: () => _unpairPrinter(printer), tooltip: 'Unpair'),
                             ],
                           ),
                           onTap: isSelected ? null : () => _connect(printer),

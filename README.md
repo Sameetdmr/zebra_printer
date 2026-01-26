@@ -13,6 +13,7 @@ A Flutter package for Zebra printers. Uses Zebra Link-OS SDK for Bluetooth and N
 ## Features
 
 ### Zebra-Specific Features (via PrinterManager - Recommended)
+
 - 🔍 **Discover Zebra Printers** - Find printers via Bluetooth & Network using Zebra SDK
 - 🔗 **Persistent Connection** - Connect once, print multiple times with automatic connection reuse
 - 📄 **Print ZPL Labels** - Send ZPL commands directly with optimized connection handling
@@ -20,8 +21,11 @@ A Flutter package for Zebra printers. Uses Zebra Link-OS SDK for Bluetooth and N
 - ℹ️ **Get Printer Info** - Type-safe `PrinterInfo` model with device details, firmware, language
 - 🎯 **Type-Safe Models** - Structured models for printer info, status, and devices
 - ⚡ **Smart Connection Management** - Automatic connection reuse for info/status queries when connected
+- 🔧 **Printer Calibration** - Easy calibration with `calibratePrinter()` (gap/bar)
+- 📝 **Configurable Logging** - Toggle internal package logs with `ZebraConfig`
 
 ### Generic Bluetooth Features (via BluetoothManager - Optional)
+
 - 📡 Scan and discover all Bluetooth devices
 - 🔌 Pair and unpair with Bluetooth devices
 - 🎯 Generic Bluetooth connectivity for non-Zebra devices
@@ -30,22 +34,22 @@ A Flutter package for Zebra printers. Uses Zebra Link-OS SDK for Bluetooth and N
 
 ### Android Native Implementation Comparison
 
-| Feature | PrinterManager | BluetoothManager | Native SDK Used |
-|---------|----------------|------------------|-----------------|
-| **Discovery** | ✅ Zebra-specific discovery | ✅ All BT devices | **PrinterManager**: Zebra SDK (`BluetoothDiscoverer`, `NetworkDiscoverer`)<br>**BluetoothManager**: Android Bluetooth API |
-| **Connection** | ✅ Persistent connection | ✅ Generic BT connection | **PrinterManager**: Zebra SDK (`BluetoothConnection`)<br>**BluetoothManager**: Android Bluetooth API (`BluetoothSocket`) |
-| **Print (ZPL)** | ✅ Optimized for Zebra | ✅ Raw data send | **Both**: Zebra SDK (`Connection.write()`) |
-| **Printer Status** | ✅ Full status info | ❌ Not available | **PrinterManager**: Zebra SDK (`SGD.GET()`) |
-| **Printer Info** | ✅ Model, SN, firmware | ❌ Not available | **PrinterManager**: Zebra SDK (`SGD.GET()`, `ZebraPrinterFactory`) |
-| **Get Paired Devices** | ✅ All paired BT devices | ✅ All paired BT devices | **Both**: Android Bluetooth API (`BluetoothAdapter.getBondedDevices()`) |
-| **Unpair Device** | ✅ Remove pairing | ✅ Remove pairing | **Both**: Android Bluetooth API (Reflection: `device.removeBond()`) |
-| **Connection Caching** | ✅ 10s cache for fast prints | ❌ No caching | **PrinterManager**: Custom implementation with Zebra SDK |
-| **Active Connection Reuse** | ✅ Info/Status use active connection | ❌ Not applicable | **PrinterManager**: Smart connection management (v0.2.3+) |
-| **Language Detection** | ✅ ZPL/CPCL detection | ❌ Not available | **PrinterManager**: Zebra SDK (`printer.getPrinterControlLanguage()`) |
+| Feature                     | PrinterManager                       | BluetoothManager         | Native SDK Used                                                                                                           |
+| --------------------------- | ------------------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| **Discovery**               | ✅ Zebra-specific discovery          | ✅ All BT devices        | **PrinterManager**: Zebra SDK (`BluetoothDiscoverer`, `NetworkDiscoverer`)<br>**BluetoothManager**: Android Bluetooth API |
+| **Connection**              | ✅ Persistent connection             | ✅ Generic BT connection | **PrinterManager**: Zebra SDK (`BluetoothConnection`)<br>**BluetoothManager**: Android Bluetooth API (`BluetoothSocket`)  |
+| **Print (ZPL)**             | ✅ Optimized for Zebra               | ✅ Raw data send         | **Both**: Zebra SDK (`Connection.write()`)                                                                                |
+| **Printer Status**          | ✅ Full status info                  | ❌ Not available         | **PrinterManager**: Zebra SDK (`SGD.GET()`)                                                                               |
+| **Printer Info**            | ✅ Model, SN, firmware               | ❌ Not available         | **PrinterManager**: Zebra SDK (`SGD.GET()`, `ZebraPrinterFactory`)                                                        |
+| **Get Paired Devices**      | ✅ All paired BT devices             | ✅ All paired BT devices | **Both**: Android Bluetooth API (`BluetoothAdapter.getBondedDevices()`)                                                   |
+| **Unpair Device**           | ✅ Remove pairing                    | ✅ Remove pairing        | **Both**: Android Bluetooth API (Reflection: `device.removeBond()`)                                                       |
+| **Connection Caching**      | ✅ 10s cache for fast prints         | ❌ No caching            | **PrinterManager**: Custom implementation with Zebra SDK                                                                  |
+| **Active Connection Reuse** | ✅ Info/Status use active connection | ❌ Not applicable        | **PrinterManager**: Smart connection management (v0.2.3+)                                                                 |
+| **Language Detection**      | ✅ ZPL/CPCL detection                | ❌ Not available         | **PrinterManager**: Zebra SDK (`printer.getPrinterControlLanguage()`)                                                     |
 
 ### Why Two Managers?
 
-1. **PrinterManager (Recommended for Zebra)**: 
+1. **PrinterManager (Recommended for Zebra)**:
    - Uses **Zebra Link-OS SDK** for all printer-specific operations
    - Falls back to **Android Bluetooth API** only for operations not supported by Zebra SDK (pairing/unpairing)
    - Optimized for Zebra printers with connection pooling and status monitoring
@@ -103,6 +107,9 @@ The `PrinterManager` uses Zebra Link-OS SDK and is the recommended approach for 
 import 'package:zebra_printer/zebra_printer.dart';
 
 final printerManager = PrinterManager();
+
+// Optional: Enable internal logging for debugging (disabled by default)
+ZebraConfig().enableLogging();
 ```
 
 #### 1. Discover Zebra Printers
@@ -119,9 +126,9 @@ printerManager.onDiscoveryFinished = (printers) {
 
 // Start discovery
 try {
-  // Options: 'bluetooth', 'network', or 'both'
-  final printers = await printerManager.startDiscovery(type: 'both');
-  
+  // Use DiscoveryType enum: bluetooth, network, or both (default)
+  final printers = await printerManager.startDiscovery(type: DiscoveryType.both);
+
   for (var printer in printers) {
     print('${printer.friendlyName} - ${printer.type} - ${printer.address}');
   }
@@ -165,6 +172,13 @@ String zpl = """
 ^XZ
 """;
 
+// 1. Calibrate before printing (if needed)
+await printerManager.calibratePrinter(
+  'AC:3F:A4:XX:XX:XX',
+  CalibrationType.gap
+);
+
+// 2. Send ZPL
 try {
   String result = await printerManager.sendZplToPrinter(
     'AC:3F:A4:XX:XX:XX',
@@ -184,7 +198,7 @@ await printerManager.printTestLabel('AC:3F:A4:XX:XX:XX');
 ```dart
 try {
   PrinterStatus status = await printerManager.checkPrinterStatus('AC:3F:A4:XX:XX:XX');
-  
+
   print('Connected: ${status.isConnected}');
   print('Paper: ${status.isPaperOut ? "Out" : "OK"}');
   print('Head: ${status.isHeadOpen ? "Open" : "Closed"}');
@@ -199,13 +213,13 @@ try {
 ```dart
 try {
   PrinterInfo info = await printerManager.getPrinterInfo('AC:3F:A4:XX:XX:XX');
-  
+
   // Type-safe access to printer details
   print('Model: ${info.model}');
   print('Serial Number: ${info.serialNumber}');
   print('Firmware: ${info.firmware}');
   print('Language: ${info.language}'); // PrinterLanguage enum (ZPL/CPCL/Unknown)
-  
+
   // Or use formatted output
   print(info.toString());
   // Output:
@@ -215,11 +229,11 @@ try {
   //   Firmware: V84.20.11Z
   //   Language: ZPL
   // }
-  
+
   // Compact format
   print(info.toCompactString());
   // Output: ZD421 (S/N: XXXXXXXXXXXX) - V84.20.11Z - ZPL
-  
+
 } catch (e) {
   print('Info error: $e');
 }
@@ -247,6 +261,7 @@ await printerManager.disconnect(address: 'AC:3F:A4:XX:XX:XX');
 ```
 
 **Benefits:**
+
 - ⚡ Faster: 300ms vs 800ms for subsequent calls
 - 🔒 More reliable: No socket timeout errors
 - 📉 Lower resource usage: Single connection instead of multiple
@@ -274,11 +289,11 @@ class _PrinterScreenState extends State<PrinterScreen> {
   List<DiscoveredPrinter> printers = [];
   DiscoveredPrinter? selectedPrinter;
   bool isConnected = false;
-  
+
   @override
   void initState() {
     super.initState();
-    
+
     // Listen for connection state changes
     printerManager.onConnectionStateChanged = (info) {
       setState(() {
@@ -286,7 +301,7 @@ class _PrinterScreenState extends State<PrinterScreen> {
       });
       print('Connection state: $isConnected');
     };
-    
+
     // Listen for discovered printers
     printerManager.onPrinterFound = (printer) {
       setState(() {
@@ -296,12 +311,12 @@ class _PrinterScreenState extends State<PrinterScreen> {
       });
     };
   }
-  
+
   Future<void> discover() async {
     setState(() => printers.clear());
     await printerManager.startDiscovery(type: 'both');
   }
-  
+
   Future<void> connect(DiscoveredPrinter printer) async {
     try {
       await printerManager.connect(printer.address);
@@ -310,13 +325,13 @@ class _PrinterScreenState extends State<PrinterScreen> {
       print('Connection error: $e');
     }
   }
-  
+
   Future<void> printTest() async {
     if (selectedPrinter != null) {
       await printerManager.printTestLabel(selectedPrinter!.address);
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -412,15 +427,17 @@ class PrinterInfo {
 ```
 
 **PrinterLanguage Enum:**
+
 ```dart
 enum PrinterLanguage {
   zpl,      // Zebra Programming Language
-  cpcl,     // Common Printer Command Language  
+  cpcl,     // Common Printer Command Language
   unknown
 }
 ```
 
 **Usage Example:**
+
 ```dart
 PrinterInfo info = await printerManager.getPrinterInfo('AC:3F:A4:XX:XX:XX');
 
@@ -454,6 +471,7 @@ class PrinterStatus {
 ```
 
 **Usage Example:**
+
 ```dart
 PrinterStatus status = await printerManager.checkPrinterStatus('AC:3F:A4:XX:XX:XX');
 
@@ -479,6 +497,7 @@ class BluetoothDevice {
 ```
 
 **Usage Example:**
+
 ```dart
 List<BluetoothDevice> devices = await printerManager.getPairedPrinters();
 
@@ -503,6 +522,7 @@ class DiscoveredPrinter {
 ```
 
 **Usage Example:**
+
 ```dart
 printerManager.onPrinterFound.listen((printer) {
   if (printer.type == 'bluetooth') {
@@ -561,18 +581,18 @@ String createQRCodeLabel(String data) {
 String createReceipt(String storeName, List<String> items, String total) {
   String zpl = "^XA\n";
   zpl += "^FO50,50^A0N,40,40^FD$storeName^FS\n";
-  
+
   int y = 100;
   for (var item in items) {
     zpl += "^FO50,$y^A0N,25,25^FD$item^FS\n";
     y += 35;
   }
-  
+
   zpl += "^FO50,$y^GB350,2,2^FS\n";
   y += 20;
   zpl += "^FO50,$y^A0N,30,30^FDTotal: $total^FS\n";
   zpl += "^XZ";
-  
+
   return zpl;
 }
 ```
@@ -582,6 +602,7 @@ String createReceipt(String storeName, List<String> items, String total) {
 This package uses the [Zebra Link-OS SDK](https://techdocs.zebra.com/link-os/2-14/android) for Android platform. For more detailed information, refer to Zebra's official documentation.
 
 ### Supported Features
+
 - Bluetooth Classic and Network connectivity
 - Zebra printer discovery using SDK
 - ZPL command execution
@@ -592,6 +613,7 @@ This package uses the [Zebra Link-OS SDK](https://techdocs.zebra.com/link-os/2-1
 ## Troubleshooting
 
 ### Printer Not Found
+
 1. Ensure Bluetooth is enabled on your device
 2. Check Location permission is granted (required for Bluetooth discovery)
 3. Make sure printer is powered on and in range
@@ -599,6 +621,7 @@ This package uses the [Zebra Link-OS SDK](https://techdocs.zebra.com/link-os/2-1
 5. Check if printer is already paired with another device
 
 ### Connection Issues
+
 1. Verify the MAC address is correct
 2. Unpair and re-pair the device if needed
 3. Check printer battery level
@@ -606,6 +629,7 @@ This package uses the [Zebra Link-OS SDK](https://techdocs.zebra.com/link-os/2-1
 5. Try restarting both devices
 
 ### Print Quality Issues
+
 1. Verify ZPL commands are correct
 2. Check printer paper and ribbon levels
 3. Adjust print darkness settings via ZPL
@@ -614,6 +638,7 @@ This package uses the [Zebra Link-OS SDK](https://techdocs.zebra.com/link-os/2-1
 ## Example App
 
 The package includes a comprehensive example app demonstrating:
+
 - Zebra-specific printer discovery (SDK-based)
 - Generic Bluetooth device scanning
 - Connection management
@@ -621,6 +646,7 @@ The package includes a comprehensive example app demonstrating:
 - Status monitoring
 
 Run the example:
+
 ```bash
 cd example
 flutter run

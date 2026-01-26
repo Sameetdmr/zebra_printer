@@ -1,7 +1,7 @@
 name: zebra_printer_example
 description: Example app for zebra_printer package
 version: 0.1.0
-publish_to: 'none'
+publish_to: "none"
 
 environment:
   sdk: ^3.7.2

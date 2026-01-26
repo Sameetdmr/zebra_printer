@@ -8,6 +8,11 @@ export 'src/bluetooth/bluetooth_manager.dart';
 export 'src/models/bluetooth_device.dart';
 export 'src/models/printer_status.dart';
 export 'src/models/printer_info.dart';
+export 'src/models/discovery_type.dart';
+export 'src/models/calibration_type.dart';
+
+// Config
+export 'src/config/zebra_config.dart';
 
 // Printer
 export 'src/printer/printer_manager.dart';

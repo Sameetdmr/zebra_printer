@@ -49,13 +49,26 @@ public class PrinterManager {
     // Discovery state
     private boolean isDiscovering = false;
     
-    // Connection management
-    private Connection activeConnection = null;
-    private String connectedAddress = null;
+    // ⚡ MULTI-PRINTER CONNECTION POOL
+    private final Map<String, Connection> connectionPool = new HashMap<>();
+    private final Map<String, Long> lastPrintTime = new HashMap<>();
     
     // Bağlantı önbellekleme - aynı yazıcıya art arda yazdırmalarda hızlandırma
     private final Map<String, Long> lastConnectionTime = new HashMap<>();
-    private static final long CONNECTION_CACHE_DURATION = 10000; // 10 saniye
+    private static final long CONNECTION_CACHE_DURATION = 30000; // 30 saniye (optimized for BT stack)
+    
+    // ⚡ FAST RETAIL MODE: Keep connection open for rapid successive prints
+    private static final long FAST_PRINT_WINDOW = 5000; // 5 saniye içindeki basımlar için bağlantıyı açık tut
+    private static final int MAX_POOL_SIZE = 3; // Maksimum eş zamanlı açık connection sayısı
+    
+    // Pending async close tracker
+    private final Map<String, Boolean> pendingCloseOperations = new HashMap<>();
+    
+    // Legacy single connection support (backward compatibility)
+    @Deprecated
+    private Connection activeConnection = null;
+    @Deprecated
+    private String connectedAddress = null;
 
     /**
      * Constructor
@@ -485,20 +498,40 @@ public class PrinterManager {
         }
         
         executorService.execute(() -> {
+            // ⏱️ BENCHMARK START
+            long benchmarkStart = System.currentTimeMillis();
+            long stepStart = benchmarkStart;
+            
+            Log.d(TAG, "════════════════════════════════════════════════════════");
+            Log.d(TAG, "⏱️ BENCHMARK START - connectToPrinter");
+            Log.d(TAG, "   Address: " + address);
+            Log.d(TAG, "════════════════════════════════════════════════════════");
+            
             try {
-                Log.d(TAG, "Opening Bluetooth connection to: " + address);
+                Log.d(TAG, "⏱️ Opening Bluetooth connection to: " + address);
                 Connection connection = new BluetoothConnection(address);
                 connection.open();
                 
+                long openDuration = System.currentTimeMillis() - stepStart;
+                Log.d(TAG, "⏱️ [+" + openDuration + "ms] ✅ Connection opened");
+                
                 // Bağlantı testi - yazıcının gerçek bir Zebra yazıcı olduğunu doğrula
-                Log.d(TAG, "Verifying Zebra printer...");
+                stepStart = System.currentTimeMillis();
+                Log.d(TAG, "⏱️ Verifying Zebra printer...");
                 ZebraPrinter printer = ZebraPrinterFactory.getInstance(connection);
                 PrinterLanguage language = printer.getPrinterControlLanguage();
-                Log.d(TAG, "Printer verified. Language: " + language.toString());
+                
+                long verifyDuration = System.currentTimeMillis() - stepStart;
+                Log.d(TAG, "⏱️ [+" + verifyDuration + "ms] ✅ Printer verified. Language: " + language.toString());
                 
                 // Bağlantıyı sakla
                 activeConnection = connection;
                 connectedAddress = address;
+                
+                long totalDuration = System.currentTimeMillis() - benchmarkStart;
+                Log.d(TAG, "════════════════════════════════════════════════════════");
+                Log.d(TAG, "⏱️ BENCHMARK END - Total Duration: " + totalDuration + "ms");
+                Log.d(TAG, "════════════════════════════════════════════════════════");
                 
                 mainHandler.post(() -> {
                     Log.d(TAG, "Connection successful!");
@@ -514,7 +547,10 @@ public class PrinterManager {
                 });
                 
             } catch (Exception e) {
-                Log.e(TAG, "Connection error: " + e.getMessage());
+                long totalDuration = System.currentTimeMillis() - benchmarkStart;
+                Log.e(TAG, "⏱️ [+" + totalDuration + "ms] ❌ Connection error: " + e.getMessage());
+                Log.d(TAG, "════════════════════════════════════════════════════════");
+                
                 activeConnection = null;
                 connectedAddress = null;
                 
@@ -631,6 +667,16 @@ public class PrinterManager {
     private void sendZplToPrinter(String macAddress, String zplData)
             throws ConnectionException, IllegalArgumentException, UnsupportedEncodingException {
 
+        // ⏱️ BENCHMARK START
+        long benchmarkStart = System.currentTimeMillis();
+        long stepStart = benchmarkStart;
+        
+        Log.d(TAG, "════════════════════════════════════════════════════════");
+        Log.d(TAG, "⏱️ BENCHMARK START - sendZplToPrinter");
+        Log.d(TAG, "   Address: " + macAddress);
+        Log.d(TAG, "   ZPL Size: " + (zplData != null ? zplData.length() : 0) + " bytes");
+        Log.d(TAG, "════════════════════════════════════════════════════════");
+
         if (macAddress == null || zplData == null || macAddress.isEmpty() || zplData.isEmpty()) {
             throw new IllegalArgumentException("MAC adresi veya ZPL verisi boş olamaz.");
         }
@@ -639,151 +685,199 @@ public class PrinterManager {
         boolean shouldCloseConnection = false;
         
         try {
-            // ✅ AKILLI BAĞLANTI: Eğer activeConnection varsa ve aynı adrese bağlıysa onu kullan
-            boolean hasActiveConnection = (activeConnection != null && 
-                                          connectedAddress != null && 
-                                          connectedAddress.equals(macAddress));
+            // ⚡ MULTI-PRINTER CONNECTION POOL: Check if connection exists for this printer
+            Connection pooledConnection = connectionPool.get(macAddress);
+            
+            Log.d(TAG, "⏱️ [+0ms] Connection check started");
+            Log.d(TAG, "   Pool size: " + connectionPool.size());
+            Log.d(TAG, "   Has pooled connection for " + macAddress + ": " + (pooledConnection != null));
             
             // Bağlantının gerçekten açık olup olmadığını kontrol et
-            boolean useActiveConnection = false;
-            if (hasActiveConnection) {
+            boolean usePooledConnection = false;
+            if (pooledConnection != null) {
                 try {
                     // Bağlantı gerçekten açık mı test et
-                    if (activeConnection.isConnected()) {
-                        Log.d(TAG, "Using existing active connection to: " + macAddress);
-                        connection = activeConnection;
-                        shouldCloseConnection = false; // Aktif bağlantıyı kapatma!
-                        useActiveConnection = true;
+                    if (pooledConnection.isConnected()) {
+                        long checkDuration = System.currentTimeMillis() - stepStart;
+                        Log.d(TAG, "⏱️ [+" + checkDuration + "ms] ✅ Pooled connection validated (multi-printer ready!)");
                         
-                        // Küçük bir bekleme - bağlantının hazır olduğundan emin ol
-                        try {
-                            Thread.sleep(300);
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                        }
+                        connection = pooledConnection;
+                        shouldCloseConnection = false; // Pool'daki bağlantıyı kapatma!
+                        usePooledConnection = true;
+                        
                     } else {
-                        Log.w(TAG, "Active connection exists but is closed, will create new connection");
-                        // Eski bağlantıyı temizle
+                        long checkDuration = System.currentTimeMillis() - stepStart;
+                        Log.w(TAG, "⏱️ [+" + checkDuration + "ms] ⚠️ Pooled connection is closed, removing from pool");
+                        
+                        // Pool'dan kaldır
                         try {
-                            activeConnection.close();
+                            pooledConnection.close();
                         } catch (Exception e) {
                             // Ignore
                         }
-                        activeConnection = null;
-                        connectedAddress = null;
+                        connectionPool.remove(macAddress);
                     }
                 } catch (Exception e) {
-                    Log.w(TAG, "Error checking connection status: " + e.getMessage());
-                    // Eski bağlantıyı temizle
+                    long checkDuration = System.currentTimeMillis() - stepStart;
+                    Log.w(TAG, "⏱️ [+" + checkDuration + "ms] ❌ Pooled connection check error: " + e.getMessage());
+                    
+                    // Pool'dan kaldır
                     try {
-                        if (activeConnection != null) activeConnection.close();
+                        if (pooledConnection != null) pooledConnection.close();
                     } catch (Exception ex) {
                         // Ignore
                     }
-                    activeConnection = null;
-                    connectedAddress = null;
+                    connectionPool.remove(macAddress);
                 }
+            } else {
+                long checkDuration = System.currentTimeMillis() - stepStart;
+                Log.d(TAG, "⏱️ [+" + checkDuration + "ms] No pooled connection for this printer");
             }
             
-            if (!useActiveConnection) {
-                // ✅ YENİ BAĞLANTI: Aktif bağlantı yok veya farklı bir yazıcı
-                Log.d(TAG, "Opening new connection to: " + macAddress);
+            if (!usePooledConnection) {
+                // ✅ YENİ BAĞLANTI: Pool'da yok veya farklı bir yazıcı
+                stepStart = System.currentTimeMillis();
                 
-                // Son 10 saniye içinde bu yazıcıya bağlanıldı mı kontrol et
+                // 🔍 Check for pending close operations
+                Boolean hasPendingClose = pendingCloseOperations.get(macAddress);
+                if (hasPendingClose != null && hasPendingClose) {
+                    Log.d(TAG, "⏱️ Waiting for pending close operation to complete...");
+                    // Wait briefly for close to complete (max 100ms)
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+                
+                // 🔍 Connection cache check
                 Long lastConnTime = lastConnectionTime.get(macAddress);
                 long currentTime = System.currentTimeMillis();
                 boolean isRecentConnection = (lastConnTime != null && 
                                              (currentTime - lastConnTime) < CONNECTION_CACHE_DURATION);
                 
-                Log.d(TAG, "Recent connection: " + isRecentConnection);
+                if (isRecentConnection) {
+                    long timeSinceLastConn = currentTime - lastConnTime;
+                    Log.d(TAG, "⏱️ Opening connection to: " + macAddress + " (last: " + timeSinceLastConn + "ms ago) 🔥 WARM");
+                } else {
+                    Log.d(TAG, "⏱️ Opening connection to: " + macAddress + " ❄️ COLD START");
+                }
                 
+                // ✅ ZEBRA SDK BEST PRACTICE:
+                // connection.open() is BLOCKING - waits until connection is ready
+                // SDK handles all connection warm-up and readiness checks internally
                 connection = new BluetoothConnection(macAddress);
                 connection.open();
                 shouldCloseConnection = true; // Yeni bağlantıyı sonra kapat
+                
+                long openDuration = System.currentTimeMillis() - stepStart;
+                
+                if (isRecentConnection) {
+                    Log.d(TAG, "⏱️ [+" + openDuration + "ms] ✅ WARM connection opened (cache hit!)");
+                } else {
+                    Log.d(TAG, "⏱️ [+" + openDuration + "ms] ✅ COLD connection opened (first/expired)");
+                }
+                
+                // Bağlantı zamanını güncelle
+                lastConnectionTime.put(macAddress, currentTime);
+            }
+
+            // Veri Gönderme: ZPL verisini yazar (UTF-8 kodlaması ile)
+            stepStart = System.currentTimeMillis();
+            Log.d(TAG, "⏱️ Sending ZPL data (" + zplData.length() + " bytes)...");
             
-                if (!isRecentConnection) {
-                    // ✅ İLK BAĞLANTI: Bağlantının gerçekten açıldığını test et
-                    // getCurrentStatus() yerine hafif bir SGD komutu kullan
-                    Log.d(TAG, "First connection - performing lightweight readiness check");
-                    int maxRetries = 3;
-                    boolean connectionReady = false;
-                    
-                    for (int attempt = 1; attempt <= maxRetries; attempt++) {
-                        try {
-                            Log.d(TAG, "Testing connection (attempt " + attempt + "/" + maxRetries + ")");
-                            
-                            // Kademeli bekleme: 1. deneme 2sn, 2. deneme 1sn, 3. deneme 800ms
-                            int waitTime = (attempt == 1) ? 2000 : (attempt == 2) ? 1000 : 800;
-                            Thread.sleep(waitTime);
-                            
-                            // HAFİF TEST: Sadece yazıcı modelini sorgula (getCurrentStatus'tan çok daha hızlı)
-                            String deviceName = SGD.GET("device.friendly_name", connection);
-                            Log.d(TAG, "Connection ready! Printer: " + deviceName);
-                            
-                            connectionReady = true;
-                            break; // Başarılı - döngüden çık
-                            
-                        } catch (Exception e) {
-                            Log.w(TAG, "Connection test attempt " + attempt + " failed: " + e.getMessage());
-                            
-                            if (attempt < maxRetries) {
-                                // Tekrar dene
-                                continue;
-                            } else {
-                                // Son deneme de başarısız - ama yine de devam et
-                                // Bazı yazıcılar SGD komutlarını desteklemiyor olabilir
-                                Log.w(TAG, "Connection test failed but continuing anyway");
-                                connectionReady = true;
-                                break;
+            // ✅ connection.write() blocking call - ZPL tamamen gönderilene kadar bekler
+            // Zebra SDK asenkron printing'i halleder, ekstra sleep gereksiz!
+            connection.write(zplData.getBytes("UTF-8"));
+            
+            long writeDuration = System.currentTimeMillis() - stepStart;
+            Log.d(TAG, "⏱️ [+" + writeDuration + "ms] ✅ ZPL data sent successfully");
+            
+            // ⚡ FAST RETAIL MODE: Check if we should keep connection open
+            Long lastPrintTime = lastConnectionTime.get(macAddress);
+            long currentTime = System.currentTimeMillis();
+            boolean isFastPrint = (lastPrintTime != null && 
+                                   (currentTime - lastPrintTime) < FAST_PRINT_WINDOW);
+            
+            if (isFastPrint && shouldCloseConnection) {
+                // 🔥 RAPID PRINT MODE: Keep connection open!
+                Log.d(TAG, "⚡ FAST PRINT MODE: Keeping connection open for rapid successive prints");
+                shouldCloseConnection = false; // Don't close!
+                
+                // ⚡ MULTI-PRINTER POOL: Add to connection pool
+                if (connection != null && !connectionPool.containsKey(macAddress)) {
+                    // Pool size check - max 3 concurrent connections
+                    if (connectionPool.size() >= MAX_POOL_SIZE) {
+                        // Remove oldest connection
+                        String oldestAddress = null;
+                        long oldestTime = Long.MAX_VALUE;
+                        for (Map.Entry<String, Long> entry : this.lastPrintTime.entrySet()) {
+                            if (entry.getValue() < oldestTime) {
+                                oldestTime = entry.getValue();
+                                oldestAddress = entry.getKey();
+                            }
+                        }
+                        if (oldestAddress != null) {
+                            Connection oldConn = connectionPool.remove(oldestAddress);
+                            if (oldConn != null) {
+                                try {
+                                    oldConn.close();
+                                    Log.d(TAG, "⚡ Removed oldest connection from pool: " + oldestAddress);
+                                } catch (Exception e) {
+                                    Log.w(TAG, "Error closing oldest connection: " + e.getMessage());
+                                }
                             }
                         }
                     }
                     
-                    if (!connectionReady) {
-                        throw new ConnectionException("Bağlantı hazır hale getirilemedi");
-                    }
-                    
-                    // İlk bağlantı başarılı - zamanı kaydet
-                    lastConnectionTime.put(macAddress, currentTime);
-                    
-                } else {
-                    // ✅ HIZLI YOL: Son 10 saniye içinde bağlanıldı - minimal bekleme
-                    Log.d(TAG, "Recent connection detected - using fast path (500ms wait)");
-                    try {
-                        Thread.sleep(500); // Hızlı yol için 500ms yeterli
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
-                    
-                    // Zamanı güncelle
-                    lastConnectionTime.put(macAddress, currentTime);
+                    connectionPool.put(macAddress, connection);
+                    this.lastPrintTime.put(macAddress, currentTime);
+                    Log.d(TAG, "⚡ Connection added to pool (multi-printer mode active, pool size: " + connectionPool.size() + ")");
                 }
-            }
-
-            // Veri Gönderme: ZPL verisini yazar (UTF-8 kodlaması ile)
-            Log.d(TAG, "Sending ZPL data (" + zplData.length() + " bytes)");
-            connection.write(zplData.getBytes("UTF-8"));
-
-            // Yazıcının baskıyı bitirmesi için kısa bir süre beklemek iyi bir uygulamadır
-            try {
-                Thread.sleep(500); // 0.5 saniye bekle
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+                
+                // Legacy support
+                if (activeConnection == null && connection != null) {
+                    activeConnection = connection;
+                    connectedAddress = macAddress;
+                }
             }
             
-            Log.d(TAG, "Print command sent successfully");
+            // ⚠️ Mark pending close BEFORE finally block (for next request)
+            if (shouldCloseConnection && macAddress != null) {
+                pendingCloseOperations.put(macAddress, true);
+                Log.d(TAG, "⏱️ Marking pending close for: " + macAddress);
+            }
 
         } finally {
-            // ✅ BAĞLANTIYI KAPAT: Sadece yeni açtığımız bağlantıları kapat
+            // ⏱️ BENCHMARK END - TOTAL DURATION (close öncesi)
+            long totalDuration = System.currentTimeMillis() - benchmarkStart;
+            Log.d(TAG, "════════════════════════════════════════════════════════");
+            Log.d(TAG, "⏱️ BENCHMARK END - Total Duration: " + totalDuration + "ms");
+            Log.d(TAG, "════════════════════════════════════════════════════════");
+            
+            // ✅ BAĞLANTIYI KAPAT: Asynchronous close (blocking'den kaçın!)
             if (shouldCloseConnection && connection != null) {
-                try {
-                    connection.close();
-                    Log.d(TAG, "Temporary connection closed");
-                } catch (ConnectionException closeEx) {
-                    Log.e(TAG, "Connection close error: " + closeEx.getMessage());
-                }
+                final Connection finalConnection = connection;
+                final String finalAddress = macAddress;
+                
+                // ⚡ NON-BLOCKING: Background thread'de kapat
+                executorService.execute(() -> {
+                    long closeStart = System.currentTimeMillis();
+                    try {
+                        finalConnection.close();
+                        long closeDuration = System.currentTimeMillis() - closeStart;
+                        Log.d(TAG, "⏱️ [async] Connection closed in " + closeDuration + "ms");
+                    } catch (Exception closeEx) {
+                        long closeDuration = System.currentTimeMillis() - closeStart;
+                        Log.e(TAG, "⏱️ [async] Connection close error after " + closeDuration + "ms: " + closeEx.getMessage());
+                    } finally {
+                        // Clear pending close flag
+                        pendingCloseOperations.remove(finalAddress);
+                        Log.d(TAG, "⏱️ Pending close cleared for: " + finalAddress);
+                    }
+                });
             } else if (connection != null) {
-                Log.d(TAG, "Active connection kept open for future use");
+                Log.d(TAG, "⏱️ Active connection kept open for future use");
             }
         }
     }
@@ -817,18 +911,13 @@ public class PrinterManager {
             if (hasActiveConnection) {
                 try {
                     // Bağlantı gerçekten açık mı test et
-                    if (activeConnection.isConnected()) {
-                        Log.d(TAG, "Using existing active connection for getPrinterInfo");
-                        connection = activeConnection;
-                        shouldCloseConnection = false; // Aktif bağlantıyı kapatma!
-                        useActiveConnection = true;
-                        
-                        // Küçük bir bekleme - bağlantının hazır olduğundan emin ol
-                        try {
-                            Thread.sleep(300);
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                        }
+                if (activeConnection.isConnected()) {
+                    Log.d(TAG, "Using existing active connection for getPrinterInfo");
+                    connection = activeConnection;
+                    shouldCloseConnection = false; // Aktif bağlantıyı kapatma!
+                    useActiveConnection = true;
+                    
+                    // ✅ Zebra SDK kendi buffer'ını yönetir - sleep gereksiz!
                     } else {
                         Log.w(TAG, "Active connection for getPrinterInfo exists but is closed");
                         activeConnection = null;
@@ -845,15 +934,10 @@ public class PrinterManager {
                 // ✅ YENİ BAĞLANTI: Aktif bağlantı yok veya farklı bir yazıcı
                 Log.d(TAG, "Opening new connection for getPrinterInfo");
                 connection = new BluetoothConnection(macAddress);
+                
+                // ✅ ZEBRA SDK: connection.open() blocking - no sleep needed
                 connection.open();
                 shouldCloseConnection = true; // Yeni bağlantıyı sonra kapat
-                
-                // Bağlantı stabilizasyonu
-                try {
-                    Thread.sleep(800);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
             }
             
             Log.d(TAG, "Creating ZebraPrinter instance...");
@@ -924,18 +1008,13 @@ public class PrinterManager {
             if (hasActiveConnection) {
                 try {
                     // Bağlantı gerçekten açık mı test et
-                    if (activeConnection.isConnected()) {
-                        Log.d(TAG, "Using existing active connection for checkPrinterStatus");
-                        connection = activeConnection;
-                        shouldCloseConnection = false; // Aktif bağlantıyı kapatma!
-                        useActiveConnection = true;
-                        
-                        // Küçük bir bekleme - bağlantının hazır olduğundan emin ol
-                        try {
-                            Thread.sleep(300);
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                        }
+                if (activeConnection.isConnected()) {
+                    Log.d(TAG, "Using existing active connection for checkPrinterStatus");
+                    connection = activeConnection;
+                    shouldCloseConnection = false; // Aktif bağlantıyı kapatma!
+                    useActiveConnection = true;
+                    
+                    // ✅ Zebra SDK kendi buffer'ını yönetir - sleep gereksiz!
                     } else {
                         Log.w(TAG, "Active connection for checkPrinterStatus exists but is closed");
                         activeConnection = null;
@@ -952,15 +1031,10 @@ public class PrinterManager {
                 // ✅ YENİ BAĞLANTI: Aktif bağlantı yok veya farklı bir yazıcı
                 Log.d(TAG, "Opening new connection for checkPrinterStatus");
                 connection = new BluetoothConnection(macAddress);
+                
+                // ✅ ZEBRA SDK: connection.open() blocking - no sleep needed
                 connection.open();
                 shouldCloseConnection = true; // Yeni bağlantıyı sonra kapat
-                
-                // Bağlantı stabilizasyonu
-                try {
-                    Thread.sleep(800);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
             }
             
             Log.d(TAG, "Getting printer status via SGD commands...");
