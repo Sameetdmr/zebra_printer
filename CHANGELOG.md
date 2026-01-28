@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.6 - Connection Stability & Error Handling 🛡️
+
+- **Android Stability Fixes**
+  - **Strict Connection Pool Cleanup**: Improved reliability by explicitly removing broken or closed connections from the pool
+  - **Better Error Recovery**: Automatically detects "Broken pipe" and other socket-related errors to trigger immediate connection cleanup
+  - **Improved State Management**: `activeConnection` and `connectionPool` are now synchronized more strictly when connection issues occur
+  - **Enhanced checkPrinterStatus**: Added thorough cleanup logic to handle stale connections during status checks
+
 ## 0.2.5 - Performance Optimization & New Features 🚀
 
 - **New Features**

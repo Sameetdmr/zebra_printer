@@ -23,6 +23,7 @@ A Flutter package for Zebra printers. Uses Zebra Link-OS SDK for Bluetooth and N
 - ⚡ **Smart Connection Management** - Automatic connection reuse for info/status queries when connected
 - 🔧 **Printer Calibration** - Easy calibration with `calibratePrinter()` (gap/bar)
 - 📝 **Configurable Logging** - Toggle internal package logs with `ZebraConfig`
+- 🛡️ **Enhanced Stability** - Automatic detection and cleanup of broken connections (v0.2.6+)
 
 ### Generic Bluetooth Features (via BluetoothManager - Optional)
 

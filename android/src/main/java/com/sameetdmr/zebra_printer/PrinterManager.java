@@ -922,11 +922,13 @@ public class PrinterManager {
                         Log.w(TAG, "Active connection for getPrinterInfo exists but is closed");
                         activeConnection = null;
                         connectedAddress = null;
+                        connectionPool.remove(macAddress);
                     }
                 } catch (Exception e) {
                     Log.w(TAG, "Error checking connection in getPrinterInfo: " + e.getMessage());
                     activeConnection = null;
                     connectedAddress = null;
+                    connectionPool.remove(macAddress);
                 }
             }
             
@@ -1017,13 +1019,23 @@ public class PrinterManager {
                     // ✅ Zebra SDK kendi buffer'ını yönetir - sleep gereksiz!
                     } else {
                         Log.w(TAG, "Active connection for checkPrinterStatus exists but is closed");
+                        
+                        // ✅ Clean up both active connection and pool
                         activeConnection = null;
                         connectedAddress = null;
+                        connectionPool.remove(macAddress);
+                        
+                        Log.d(TAG, "Broken connection removed from pool");
                     }
                 } catch (Exception e) {
                     Log.w(TAG, "Error checking connection in checkPrinterStatus: " + e.getMessage());
+                    
+                    // ✅ Clean up both active connection and pool
                     activeConnection = null;
                     connectedAddress = null;
+                    connectionPool.remove(macAddress);
+                    
+                    Log.d(TAG, "Broken connection removed from pool");
                 }
             }
             
@@ -1058,6 +1070,18 @@ public class PrinterManager {
             
         } catch (Exception e) {
             Log.e(TAG, "Error getting printer status: " + e.getMessage());
+            
+            // ✅ Clean up broken connections from pool
+            if (e.getMessage() != null && 
+                (e.getMessage().contains("Broken pipe") || 
+                 e.getMessage().contains("Connection") ||
+                 e.getMessage().contains("writing"))) {
+                connectionPool.remove(macAddress);
+                activeConnection = null;
+                connectedAddress = null;
+                Log.d(TAG, "Broken connection removed from pool (catch block)");
+            }
+            
             statusMap.put("isConnected", false);
             statusMap.put("error", e.getMessage());
             return statusMap;
