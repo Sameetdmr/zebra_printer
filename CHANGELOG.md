@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.7 - Documentation Cleanup 📝
+
+- **Documentation Improvements**
+  - Updated `README.md` credits and support information
+  - Fixed broken GitHub issue links
+
 ## 0.2.6 - Connection Stability & Error Handling 🛡️
 
 - **Android Stability Fixes**

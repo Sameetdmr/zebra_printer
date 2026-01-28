@@ -663,9 +663,9 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## Support
 
-For issues and feature requests, please visit our [GitHub Issues](https://github.com/yourusername/zebra_printer/issues) page.
+For issues and feature requests, please visit our [GitHub Issues](https://github.com/Sameetdmr/zebra_printer/issues) page.
 
 ## Credits
 
 - Powered by [Zebra Link-OS SDK](https://www.zebra.com/us/en/support-downloads/software/developer-tools/link-os-sdk.html)
-- Maintained by the Flutter community
+- Developed and maintained by [Samed Demir](https://github.com/Sameetdmr)
