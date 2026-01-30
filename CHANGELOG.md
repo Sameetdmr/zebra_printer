@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.9 - Example App Enhancement & Logging 📱
+
+- **Example App Improvements**
+  - Added **Batch Print** demonstration to show high-performance printing of multiple labels.
+  - Integrated `ZebraConfig` to show how to enable/disable internal package logging.
+  - Improved UI feedback for connection and printing states.
+
+- **Internal Changes**
+  - Enabled internal logging by default in the example app for better developer onboarding.
+
 ## 0.2.8 - Batch Printing & Stability Focus ⚡
 
 - **New Features**

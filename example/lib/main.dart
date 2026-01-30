@@ -31,6 +31,9 @@ class _MyHomePageState extends State<MyHomePage> with SingleTickerProviderStateM
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+
+    // Optional: Enable internal logging for debugging
+    ZebraConfig().enableLogging();
   }
 
   @override
@@ -243,6 +246,28 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
     }
   }
 
+  Future<void> _printBatch() async {
+    if (_selectedPrinter == null) return;
+
+    setState(() {
+      _status = 'Printing 3 labels (Batch)...';
+    });
+
+    try {
+      final List<String> labels = ['^XA^FO50,50^A0N,50,50^FDLabel 1/3^FS^XZ', '^XA^FO50,50^A0N,50,50^FDLabel 2/3^FS^XZ', '^XA^FO50,50^A0N,50,50^FDLabel 3/3^FS^XZ'];
+
+      await widget.printerManager.sendMultipleZplToPrinter(_selectedPrinter!.address, labels);
+
+      setState(() {
+        _status = 'Batch print successful (3 labels)';
+      });
+    } catch (e) {
+      setState(() {
+        _status = 'Batch print error: $e';
+      });
+    }
+  }
+
   Future<void> _checkStatus() async {
     if (_selectedPrinter == null) return;
 
@@ -326,7 +351,8 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
               ElevatedButton.icon(onPressed: _getPairedPrinters, icon: const Icon(Icons.devices), label: const Text('Paired')),
               if (_isConnected) ...[
                 ElevatedButton.icon(onPressed: _disconnect, icon: const Icon(Icons.link_off), label: const Text('Disconnect'), style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade400)),
-                ElevatedButton.icon(onPressed: _printTest, icon: const Icon(Icons.print), label: const Text('Print')),
+                ElevatedButton.icon(onPressed: _printTest, icon: const Icon(Icons.print), label: const Text('Test Print')),
+                ElevatedButton.icon(onPressed: _printBatch, icon: const Icon(Icons.bolt), label: const Text('Batch Print')),
                 ElevatedButton.icon(onPressed: _checkStatus, icon: const Icon(Icons.info_outline), label: const Text('Status')),
                 ElevatedButton.icon(onPressed: _getPrinterInfo, icon: const Icon(Icons.info), label: const Text('Info')),
               ],
