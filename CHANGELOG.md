@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.8 - Batch Printing & Stability Focus ⚡
+
+- **New Features**
+  - **⚡ Batch Printing**: Added `sendMultipleZplToPrinter()` to print multiple labels in a single connection. This significantly improves performance for multi-label jobs.
+  - **Native Batch Support**: Implemented `sendMultipleZplToPrinter` on Android with retry mechanism and robust connection handling.
+
+- **Stability Improvements**
+  - **Zebra Best Practices**: Refactored connection management to follow Zebra SDK best practices. Operations now explicitly open and close connections in `finally` blocks to ensure resource cleanup.
+  - **Simplified Connection Logic**: Removed complex connection pooling in favor of a more stable "per-operation" connection model, preventing "Broken pipe" and socket issues.
+  - **Retry Mechanism**: Added automatic retry for batch printing connections to handle transient Bluetooth issues.
+
 ## 0.2.7 - Documentation Cleanup 📝
 
 - **Documentation Improvements**

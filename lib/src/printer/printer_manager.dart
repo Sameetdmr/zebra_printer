@@ -257,6 +257,45 @@ class PrinterManager {
     }
   }
 
+  /// ⚡ BATCH PRINTING: Sends multiple ZPL codes to the printer in a single connection
+  /// Performance optimization: Opens connection once for all labels instead of once per label
+  ///
+  /// [macAddress] MAC address of the printer
+  /// [zplList] List of ZPL codes to print
+  ///
+  /// Returns result message if successful, throws an error if failed
+  Future<String> sendMultipleZplToPrinter(String macAddress, List<String> zplList) async {
+    if (macAddress.isEmpty) {
+      throw Exception("MAC address cannot be empty.");
+    }
+    if (zplList.isEmpty) {
+      throw Exception("ZPL list cannot be empty.");
+    }
+    
+    try {
+      // Prepare ZPL list: ensure each ZPL starts with ^XA and ends with ^XZ
+      final List<String> finalZplList = zplList.map((zplData) {
+        final trimmed = zplData.trim();
+        if (trimmed.startsWith("^XA") && trimmed.endsWith("^XZ")) {
+          return zplData;
+        } else {
+          return "^XA$zplData^XZ";
+        }
+      }).toList();
+
+      _config.log('sendMultipleZplToPrinter called for $macAddress with ${finalZplList.length} labels');
+      final String result = await _channel.invokeMethod('printMultipleLabels', {
+        'address': macAddress,
+        'dataList': finalZplList,
+      });
+      _config.log('sendMultipleZplToPrinter result: $result');
+      return result;
+    } on PlatformException catch (e) {
+      _config.log('sendMultipleZplToPrinter error: ${e.code} - ${e.message}');
+      throw Exception("Batch Print Error (${e.code}): ${e.message}");
+    }
+  }
+
   /// Calibrates the printer with specified calibration type
   ///
   /// [macAddress] MAC address of the printer
