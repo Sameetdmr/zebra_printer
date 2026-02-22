@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0 - Comprehensive Print Progress & Safe APIs 🛡️📈
+
+- **New Features**
+  - **`safePrint()` and `safeBatchPrint()`**: Replaced old print methods with lock-protected alternatives that prevent overlapping print jobs and provide seamless progress feedback.
+  - **`onPrintProgress` Callback**: Real-time progress tracking `(0-100%)` for print jobs, complete with informative string messages and batch label counting.
+  - **`ZebraPrinterStatus` & `getZebraPrinterStatus()`**: Replaced legacy `PrinterStatus` with an immensely comprehensive model (`ZebraPrinterStatus`) directly mapped from Zebra's Link-OS SDK, offering deep insights like `isReceiveBufferFull`, `isRibbonOut`, `isBusy`, `hasCriticalError`, and localized alert generation.
+  - **Helper Methods**: Added `isPrinterBusy()`, `canPrint()`, and `waitForPrinterReady()` polling utilities to streamline job queues.
+
+- **Breaking Changes**
+  - `checkPrinterStatus` replaced with `getZebraPrinterStatus` (Returns `ZebraPrinterStatus` instead of `PrinterStatus`).
+  - Deprecated generic `sendZpl` methods in favor of the newly robust `safePrint` and `safeBatchPrint`.
+
 ## 0.2.9 - Example App Enhancement & Logging 📱
 
 - **Example App Improvements**
