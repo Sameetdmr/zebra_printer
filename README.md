@@ -31,7 +31,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  zebra_printer: ^0.2.8
+  zebra_printer: ^0.3.0
 ```
 
 ### Android Configuration
@@ -146,4 +146,4 @@ await printerManager.enableLogging(); // Turn on debug logs
 
 ## ⚖️ License
 
-MIT License - Copyright (c) 2024 Samed Demir
+MIT License - Copyright (c) 2025 Samed Demir

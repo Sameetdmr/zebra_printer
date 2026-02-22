@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 - Documentation Updates 📝
+
+- Updated `README.md` to reflect the latest installation version (`^0.3.0`).
+- Updated the license year to 2025.
+
 ## 0.3.0 - Comprehensive Print Progress & Safe APIs 🛡️📈
 
 - **New Features**
