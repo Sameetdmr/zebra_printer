@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2 - Documentation & Formatting 🧹
+
+- Shortened `README.md` usage examples to improve readability and refer to the full `example/` app.
+- Internal formatting and minor linter fixes in `PrinterStatus` model.
+
 ## 0.3.1 - Documentation Updates 📝
 
 - Updated `README.md` to reflect the latest installation version (`^0.3.0`).
