@@ -1,5 +1,6 @@
 package com.sameetdmr.zebra_printer;
 
+import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
@@ -7,11 +8,14 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.core.app.ActivityCompat;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -165,13 +169,39 @@ public class BluetoothManager {
      * @param result Sonuç callback'i
      */
     private void startDiscovery(final MethodChannel.Result result) {
-        if (isDiscovering) {
-            stopDiscovery(null);
-        }
-
         if (bluetoothAdapter == null) {
             result.error("BLUETOOTH_UNAVAILABLE", "Bluetooth adapter bulunamadı", null);
             return;
+        }
+
+        // ✅ Android 12+ (API 31+) için BLUETOOTH_SCAN permission kontrolü
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) 
+                != PackageManager.PERMISSION_GRANTED) {
+                Log.e(TAG, "BLUETOOTH_SCAN permission not granted");
+                result.error("PERMISSION_DENIED", 
+                    "BLUETOOTH_SCAN izni gerekli. Lütfen uygulama ayarlarından Bluetooth iznini verin.", 
+                    null);
+                return;
+            }
+        }
+
+        // ✅ Önceki discovery'yi iptal et
+        if (bluetoothAdapter.isDiscovering()) {
+            Log.d(TAG, "Canceling previous discovery");
+            bluetoothAdapter.cancelDiscovery();
+        }
+
+        // ✅ Önceki receiver'ı temizle
+        if (discoveryReceiver != null) {
+            try {
+                context.unregisterReceiver(discoveryReceiver);
+                Log.d(TAG, "Unregistered previous receiver");
+            } catch (Exception e) {
+                // Receiver zaten unregister edilmiş, sorun değil
+                Log.d(TAG, "Receiver already unregistered: " + e.getMessage());
+            }
+            discoveryReceiver = null;
         }
 
         // Keşif tamamlandığında ve yeni cihaz bulunduğunda tetiklenecek BroadcastReceiver
@@ -227,14 +257,30 @@ public class BluetoothManager {
         filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
         
         // BroadcastReceiver'ı kaydet
-        context.registerReceiver(discoveryReceiver, filter);
+        try {
+            context.registerReceiver(discoveryReceiver, filter);
+            Log.d(TAG, "Receiver registered successfully");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to register receiver: " + e.getMessage());
+            result.error("RECEIVER_REGISTRATION_FAILED", "BroadcastReceiver kaydedilemedi: " + e.getMessage(), null);
+            return;
+        }
 
         // Keşfi başlat
         if (bluetoothAdapter.startDiscovery()) {
             isDiscovering = true;
+            Log.d(TAG, "Discovery started successfully");
             result.success(true);
         } else {
-            result.error("DISCOVERY_FAILED", "Cihaz keşfi başlatılamadı", null);
+            // ✅ Başarısız olursa receiver'ı temizle
+            Log.e(TAG, "startDiscovery() returned false");
+            try {
+                context.unregisterReceiver(discoveryReceiver);
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to unregister receiver after failed start: " + e.getMessage());
+            }
+            discoveryReceiver = null;
+            result.error("DISCOVERY_FAILED", "Cihaz keşfi başlatılamadı. Bluetooth izinlerini kontrol edin.", null);
         }
     }
 

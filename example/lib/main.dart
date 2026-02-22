@@ -10,7 +10,14 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(title: 'Zebra Printer Demo', theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue), useMaterial3: true), home: const MyHomePage());
+    return MaterialApp(
+      title: 'Zebra Printer Demo',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        useMaterial3: true,
+      ),
+      home: const MyHomePage(),
+    );
   }
 }
 
@@ -21,7 +28,8 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> with SingleTickerProviderStateMixin {
+class _MyHomePageState extends State<MyHomePage>
+    with SingleTickerProviderStateMixin {
   final BluetoothManager _bluetoothManager = BluetoothManager();
   final PrinterManager _printerManager = PrinterManager();
 
@@ -49,9 +57,24 @@ class _MyHomePageState extends State<MyHomePage> with SingleTickerProviderStateM
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: const Text('Zebra Printer Demo'),
-        bottom: TabBar(controller: _tabController, tabs: const [Tab(icon: Icon(Icons.print), text: 'Zebra SDK'), Tab(icon: Icon(Icons.bluetooth), text: 'Bluetooth')]),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(icon: Icon(Icons.print), text: 'Zebra SDK'),
+            Tab(icon: Icon(Icons.bluetooth), text: 'Bluetooth'),
+          ],
+        ),
       ),
-      body: TabBarView(controller: _tabController, children: [ZebraSDKTab(printerManager: _printerManager), BluetoothTab(bluetoothManager: _bluetoothManager, printerManager: _printerManager)]),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          ZebraSDKTab(printerManager: _printerManager),
+          BluetoothTab(
+            bluetoothManager: _bluetoothManager,
+            printerManager: _printerManager,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -78,6 +101,19 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
   void initState() {
     super.initState();
     _setupPrinterListeners();
+
+    // Listen to print progress
+    widget.printerManager.onPrintProgress = (progress) {
+      if (mounted) {
+        setState(() {
+          _status = 'Printing: ${progress.percentage}% - ${progress.message}';
+          if (progress.isBatch) {
+            _status +=
+                ' (Label ${progress.currentLabel}/${progress.totalLabels})';
+          }
+        });
+      }
+    };
   }
 
   void _setupPrinterListeners() {
@@ -92,7 +128,8 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
     widget.printerManager.onDiscoveryFinished = (printers) {
       setState(() {
         _isDiscovering = false;
-        _status = 'Discovery complete. Found ${printers.length} Zebra printer(s)';
+        _status =
+            'Discovery complete. Found ${printers.length} Zebra printer(s)';
       });
     };
 
@@ -116,7 +153,9 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
     });
 
     try {
-      final result = await widget.printerManager.startDiscovery(type: DiscoveryType.bluetooth);
+      final result = await widget.printerManager.startDiscovery(
+        type: DiscoveryType.bluetooth,
+      );
 
       // Eğer sonuç boşsa ve callback'ten de veri gelmediyse
       if (result.isEmpty && _printers.isEmpty) {
@@ -144,7 +183,16 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
     try {
       final paired = await widget.printerManager.getPairedPrinters();
       setState(() {
-        _printers = paired.map((device) => DiscoveredPrinter(address: device.address, friendlyName: device.name ?? device.address, type: 'bluetooth')).toList();
+        _printers =
+            paired
+                .map(
+                  (device) => DiscoveredPrinter(
+                    address: device.address,
+                    friendlyName: device.name ?? device.address,
+                    type: 'bluetooth',
+                  ),
+                )
+                .toList();
         _status = 'Loaded ${paired.length} paired device(s)';
       });
     } catch (e) {
@@ -209,7 +257,9 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
   Future<void> _disconnect() async {
     try {
       // Disconnect from currently selected printer
-      final disconnected = await widget.printerManager.disconnect(address: _selectedPrinter?.address);
+      final disconnected = await widget.printerManager.disconnect(
+        address: _selectedPrinter?.address,
+      );
       if (disconnected) {
         setState(() {
           _status = 'Disconnected';
@@ -231,14 +281,16 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
     if (_selectedPrinter == null) return;
 
     setState(() {
-      _status = 'Printing test label...';
+      _status = 'Initiating safePrint...';
     });
 
     try {
-      await widget.printerManager.printTestLabel(_selectedPrinter!.address);
-      setState(() {
-        _status = 'Print successful';
-      });
+      // safePrint provides locking mechanism and progress updates
+      await widget.printerManager.safePrint(
+        _selectedPrinter!.address,
+        '^XA^FO50,50^A0N,50,50^FDTest Label^FS^XZ',
+      );
+      // Progress callbacks will handle the 'successful' state text.
     } catch (e) {
       setState(() {
         _status = 'Print error: $e';
@@ -250,17 +302,20 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
     if (_selectedPrinter == null) return;
 
     setState(() {
-      _status = 'Printing 3 labels (Batch)...';
+      _status = 'Initiating safeBatchPrint (3 labels)...';
     });
 
     try {
-      final List<String> labels = ['^XA^FO50,50^A0N,50,50^FDLabel 1/3^FS^XZ', '^XA^FO50,50^A0N,50,50^FDLabel 2/3^FS^XZ', '^XA^FO50,50^A0N,50,50^FDLabel 3/3^FS^XZ'];
+      final List<String> labels = [
+        '^XA^FO50,50^A0N,50,50^FDLabel 1/3^FS^XZ',
+        '^XA^FO50,50^A0N,50,50^FDLabel 2/3^FS^XZ',
+        '^XA^FO50,50^A0N,50,50^FDLabel 3/3^FS^XZ',
+      ];
 
-      await widget.printerManager.sendMultipleZplToPrinter(_selectedPrinter!.address, labels);
-
-      setState(() {
-        _status = 'Batch print successful (3 labels)';
-      });
+      await widget.printerManager.safeBatchPrint(
+        _selectedPrinter!.address,
+        labels,
+      );
     } catch (e) {
       setState(() {
         _status = 'Batch print error: $e';
@@ -272,12 +327,14 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
     if (_selectedPrinter == null) return;
 
     try {
-      PrinterStatus status = await widget.printerManager.checkPrinterStatus(_selectedPrinter!.address);
+      final status = await widget.printerManager.getZebraPrinterStatus(
+        _selectedPrinter!.address,
+      );
       setState(() {
         _status =
-            'Status: ${status.isConnected ? "Connected" : "Disconnected"}, '
-            'Paper: ${status.isPaperOut ? "Out" : "OK"}, '
-            'Head: ${status.isHeadOpen ? "Open" : "Closed"}';
+            'Status: ${status.statusMessagePlain}\n'
+            'Ready: ${status.isReadyToPrint ? "Yes" : "No"}, Error: ${status.hasError ? "Yes" : "No"}\n'
+            'Paper Out: ${status.isPaperOut ? "Yes" : "No"}, Head Open: ${status.isHeadOpen ? "Yes" : "No"}';
       });
     } catch (e) {
       setState(() {
@@ -290,7 +347,9 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
     if (_selectedPrinter == null) return;
 
     try {
-      PrinterInfo info = await widget.printerManager.getPrinterInfo(_selectedPrinter!.address);
+      PrinterInfo info = await widget.printerManager.getPrinterInfo(
+        _selectedPrinter!.address,
+      );
       if (mounted) {
         showDialog(
           context: context,
@@ -310,7 +369,12 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
                     _buildInfoRow('Language', info.language.toString()),
                   ],
                 ),
-                actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('OK'),
+                  ),
+                ],
               ),
         );
       }
@@ -322,7 +386,19 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
   }
 
   Widget _buildInfoRow(String label, String value) {
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [SizedBox(width: 100, child: Text('$label:', style: const TextStyle(fontWeight: FontWeight.bold))), Expanded(child: Text(value))]);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 100,
+          child: Text(
+            '$label:',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+        Expanded(child: Text(value)),
+      ],
+    );
   }
 
   @override
@@ -335,7 +411,18 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
           padding: const EdgeInsets.all(16),
           color: Colors.blue.shade50,
           child: Column(
-            children: [Text(_status, style: const TextStyle(fontWeight: FontWeight.bold), textAlign: TextAlign.center), const SizedBox(height: 8), Text('Using Zebra Link-OS SDK', style: TextStyle(fontSize: 12, color: Colors.grey.shade600))],
+            children: [
+              Text(
+                _status,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Using Zebra Link-OS SDK',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ],
           ),
         ),
 
@@ -347,14 +434,45 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
             runSpacing: 8,
             alignment: WrapAlignment.center,
             children: [
-              ElevatedButton.icon(onPressed: _isDiscovering ? _stopDiscovery : _discoverPrinters, icon: Icon(_isDiscovering ? Icons.stop : Icons.search), label: Text(_isDiscovering ? 'Stop' : 'Discover')),
-              ElevatedButton.icon(onPressed: _getPairedPrinters, icon: const Icon(Icons.devices), label: const Text('Paired')),
+              ElevatedButton.icon(
+                onPressed: _isDiscovering ? _stopDiscovery : _discoverPrinters,
+                icon: Icon(_isDiscovering ? Icons.stop : Icons.search),
+                label: Text(_isDiscovering ? 'Stop' : 'Discover'),
+              ),
+              ElevatedButton.icon(
+                onPressed: _getPairedPrinters,
+                icon: const Icon(Icons.devices),
+                label: const Text('Paired'),
+              ),
               if (_isConnected) ...[
-                ElevatedButton.icon(onPressed: _disconnect, icon: const Icon(Icons.link_off), label: const Text('Disconnect'), style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade400)),
-                ElevatedButton.icon(onPressed: _printTest, icon: const Icon(Icons.print), label: const Text('Test Print')),
-                ElevatedButton.icon(onPressed: _printBatch, icon: const Icon(Icons.bolt), label: const Text('Batch Print')),
-                ElevatedButton.icon(onPressed: _checkStatus, icon: const Icon(Icons.info_outline), label: const Text('Status')),
-                ElevatedButton.icon(onPressed: _getPrinterInfo, icon: const Icon(Icons.info), label: const Text('Info')),
+                ElevatedButton.icon(
+                  onPressed: _disconnect,
+                  icon: const Icon(Icons.link_off),
+                  label: const Text('Disconnect'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade400,
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _printTest,
+                  icon: const Icon(Icons.print),
+                  label: const Text('Safe Print'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _printBatch,
+                  icon: const Icon(Icons.layers),
+                  label: const Text('Safe Batch Print'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _checkStatus,
+                  icon: const Icon(Icons.info_outline),
+                  label: const Text('Status'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _getPrinterInfo,
+                  icon: const Icon(Icons.info),
+                  label: const Text('Info'),
+                ),
               ],
             ],
           ),
@@ -370,11 +488,21 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.print, size: 64, color: Colors.grey.shade300),
+                        Icon(
+                          Icons.print,
+                          size: 64,
+                          color: Colors.grey.shade300,
+                        ),
                         const SizedBox(height: 16),
-                        Text('No Zebra printers found', style: TextStyle(color: Colors.grey.shade600)),
+                        Text(
+                          'No Zebra printers found',
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
                         const SizedBox(height: 8),
-                        const Text('Tap "Discover Printers" to search', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                        const Text(
+                          'Tap "Discover Printers" to search',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
                       ],
                     ),
                   )
@@ -382,21 +510,58 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
                     itemCount: _printers.length,
                     itemBuilder: (context, index) {
                       final printer = _printers[index];
-                      final isSelected = printer.address == _selectedPrinter?.address;
+                      final isSelected =
+                          printer.address == _selectedPrinter?.address;
 
                       return Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         elevation: isSelected ? 4 : 1,
                         color: isSelected ? Colors.blue.shade50 : null,
                         child: ListTile(
-                          leading: CircleAvatar(backgroundColor: printer.type == 'bluetooth' ? Colors.blue : Colors.green, child: Icon(printer.type == 'bluetooth' ? Icons.bluetooth : Icons.wifi, color: Colors.white)),
-                          title: Text(printer.friendlyName, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
-                          subtitle: Text('${printer.type.toUpperCase()} • ${printer.address}'),
+                          leading: CircleAvatar(
+                            backgroundColor:
+                                printer.type == 'bluetooth'
+                                    ? Colors.blue
+                                    : Colors.green,
+                            child: Icon(
+                              printer.type == 'bluetooth'
+                                  ? Icons.bluetooth
+                                  : Icons.wifi,
+                              color: Colors.white,
+                            ),
+                          ),
+                          title: Text(
+                            printer.friendlyName,
+                            style: TextStyle(
+                              fontWeight:
+                                  isSelected
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${printer.type.toUpperCase()} • ${printer.address}',
+                          ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (isSelected && _isConnected) const Icon(Icons.check_circle, color: Colors.green),
-                              IconButton(icon: const Icon(Icons.delete_outline, size: 20), color: Colors.red, onPressed: () => _unpairPrinter(printer), tooltip: 'Unpair'),
+                              if (isSelected && _isConnected)
+                                const Icon(
+                                  Icons.check_circle,
+                                  color: Colors.green,
+                                ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  size: 20,
+                                ),
+                                color: Colors.red,
+                                onPressed: () => _unpairPrinter(printer),
+                                tooltip: 'Unpair',
+                              ),
                             ],
                           ),
                           onTap: isSelected ? null : () => _connect(printer),
@@ -416,7 +581,11 @@ class BluetoothTab extends StatefulWidget {
   final BluetoothManager bluetoothManager;
   final PrinterManager printerManager;
 
-  const BluetoothTab({super.key, required this.bluetoothManager, required this.printerManager});
+  const BluetoothTab({
+    super.key,
+    required this.bluetoothManager,
+    required this.printerManager,
+  });
 
   @override
   State<BluetoothTab> createState() => _BluetoothTabState();
@@ -452,7 +621,8 @@ class _BluetoothTabState extends State<BluetoothTab> {
     widget.bluetoothManager.onConnectionStateChanged.listen((state) {
       setState(() {
         if (state == BluetoothConnectionState.connected) {
-          _status = 'Connected: ${widget.bluetoothManager.connectedDevice?.name}';
+          _status =
+              'Connected: ${widget.bluetoothManager.connectedDevice?.name}';
         } else if (state == BluetoothConnectionState.disconnected) {
           _status = 'Disconnected';
         } else if (state == BluetoothConnectionState.connecting) {
@@ -479,7 +649,8 @@ class _BluetoothTabState extends State<BluetoothTab> {
         return;
       }
 
-      List<BluetoothDevice> bondedDevices = await widget.bluetoothManager.getBondedDevices();
+      List<BluetoothDevice> bondedDevices =
+          await widget.bluetoothManager.getBondedDevices();
       setState(() {
         _devices = bondedDevices;
       });
@@ -532,7 +703,9 @@ class _BluetoothTabState extends State<BluetoothTab> {
     });
 
     try {
-      String result = await widget.printerManager.printTestLabel(_selectedDevice!.address);
+      String result = await widget.printerManager.printTestLabel(
+        _selectedDevice!.address,
+      );
       setState(() {
         _status = 'Test label printed: $result';
       });
@@ -547,12 +720,16 @@ class _BluetoothTabState extends State<BluetoothTab> {
     if (_selectedDevice == null) return;
 
     try {
-      PrinterStatus status = await widget.printerManager.checkPrinterStatus(_selectedDevice!.address);
+      final status = await widget.printerManager.getZebraPrinterStatus(
+        _selectedDevice!.address,
+      );
       setState(() {
-        _status = 'Printer status: ${status.isConnected ? "Connected" : "Not connected"}';
-        if (status.isConnected) {
-          _status += ', Paper: ${status.isPaperOut ? "Out" : "Available"}';
-          _status += ', Head: ${status.isHeadOpen ? "Open" : "Closed"}';
+        _status = 'Printer status: ${status.statusMessagePlain}';
+        if (status.isReadyToPrint || status.hasError) {
+          _status +=
+              '\nReady: ${status.isReadyToPrint ? "Yes" : "No"}, '
+              'Paper Out: ${status.isPaperOut ? "Yes" : "No"}, '
+              'Head Open: ${status.isHeadOpen ? "Yes" : "No"}';
         }
       });
     } catch (e) {
@@ -572,7 +749,18 @@ class _BluetoothTabState extends State<BluetoothTab> {
           padding: const EdgeInsets.all(16),
           color: Colors.amber.shade50,
           child: Column(
-            children: [Text(_status, style: const TextStyle(fontWeight: FontWeight.bold), textAlign: TextAlign.center), const SizedBox(height: 8), Text('Using Android Bluetooth API', style: TextStyle(fontSize: 12, color: Colors.grey.shade600))],
+            children: [
+              Text(
+                _status,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Using Android Bluetooth API',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ],
           ),
         ),
 
@@ -584,11 +772,30 @@ class _BluetoothTabState extends State<BluetoothTab> {
             runSpacing: 8,
             alignment: WrapAlignment.center,
             children: [
-              ElevatedButton.icon(onPressed: _isScanning ? _stopScan : _scanDevices, icon: Icon(_isScanning ? Icons.stop : Icons.search), label: Text(_isScanning ? 'Stop Scan' : 'Scan Devices')),
+              ElevatedButton.icon(
+                onPressed: _isScanning ? _stopScan : _scanDevices,
+                icon: Icon(_isScanning ? Icons.stop : Icons.search),
+                label: Text(_isScanning ? 'Stop Scan' : 'Scan Devices'),
+              ),
               if (widget.bluetoothManager.isConnected) ...[
-                ElevatedButton.icon(onPressed: _disconnect, icon: const Icon(Icons.link_off), label: const Text('Disconnect'), style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade400)),
-                ElevatedButton.icon(onPressed: _printTest, icon: const Icon(Icons.print), label: const Text('Print Test')),
-                ElevatedButton.icon(onPressed: _checkStatus, icon: const Icon(Icons.info_outline), label: const Text('Check Status')),
+                ElevatedButton.icon(
+                  onPressed: _disconnect,
+                  icon: const Icon(Icons.link_off),
+                  label: const Text('Disconnect'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade400,
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _printTest,
+                  icon: const Icon(Icons.print),
+                  label: const Text('Print Test'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _checkStatus,
+                  icon: const Icon(Icons.info_outline),
+                  label: const Text('Check Status'),
+                ),
               ],
             ],
           ),
@@ -604,11 +811,21 @@ class _BluetoothTabState extends State<BluetoothTab> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.bluetooth, size: 64, color: Colors.grey.shade300),
+                        Icon(
+                          Icons.bluetooth,
+                          size: 64,
+                          color: Colors.grey.shade300,
+                        ),
                         const SizedBox(height: 16),
-                        Text('No Bluetooth devices found', style: TextStyle(color: Colors.grey.shade600)),
+                        Text(
+                          'No Bluetooth devices found',
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
                         const SizedBox(height: 8),
-                        const Text('Tap "Scan Devices" to search', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                        const Text(
+                          'Tap "Scan Devices" to search',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
                       ],
                     ),
                   )
@@ -616,18 +833,48 @@ class _BluetoothTabState extends State<BluetoothTab> {
                     itemCount: _devices.length,
                     itemBuilder: (context, index) {
                       final device = _devices[index];
-                      final isConnected = device.address == widget.bluetoothManager.connectedDevice?.address;
+                      final isConnected =
+                          device.address ==
+                          widget.bluetoothManager.connectedDevice?.address;
 
                       return Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         elevation: isConnected ? 4 : 1,
                         color: isConnected ? Colors.amber.shade50 : null,
                         child: ListTile(
-                          leading: CircleAvatar(backgroundColor: Colors.blue, child: Icon(isConnected ? Icons.bluetooth_connected : Icons.bluetooth, color: Colors.white)),
-                          title: Text(device.name ?? 'Unnamed Device', style: TextStyle(fontWeight: isConnected ? FontWeight.bold : FontWeight.normal)),
+                          leading: CircleAvatar(
+                            backgroundColor: Colors.blue,
+                            child: Icon(
+                              isConnected
+                                  ? Icons.bluetooth_connected
+                                  : Icons.bluetooth,
+                              color: Colors.white,
+                            ),
+                          ),
+                          title: Text(
+                            device.name ?? 'Unnamed Device',
+                            style: TextStyle(
+                              fontWeight:
+                                  isConnected
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                            ),
+                          ),
                           subtitle: Text(device.address),
-                          trailing: isConnected ? const Icon(Icons.check_circle, color: Colors.green) : null,
-                          onTap: isConnected ? null : () => _connectToDevice(device),
+                          trailing:
+                              isConnected
+                                  ? const Icon(
+                                    Icons.check_circle,
+                                    color: Colors.green,
+                                  )
+                                  : null,
+                          onTap:
+                              isConnected
+                                  ? null
+                                  : () => _connectToDevice(device),
                         ),
                       );
                     },

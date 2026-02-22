@@ -17,22 +17,25 @@ public class ZebraPrinterPlugin implements FlutterPlugin, MethodCallHandler {
 
   @Override
   public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
-    // Printer channel
+    // Printer channel - PrinterManager handles its own calls
     printerChannel = new MethodChannel(flutterPluginBinding.getBinaryMessenger(), "com.sameetdmr.zebra_printer/zebra_print");
     printerManager = new PrinterManager(flutterPluginBinding.getApplicationContext());
     printerManager.setMethodChannel(printerChannel);
-    printerChannel.setMethodCallHandler(this);
+    // Set PrinterManager as handler for printer channel
+    printerChannel.setMethodCallHandler((call, result) -> printerManager.handleMethodCall(call, result));
     
-    // Bluetooth channel
+    // Bluetooth channel - BluetoothManager has its own handler
     bluetoothChannel = new MethodChannel(flutterPluginBinding.getBinaryMessenger(), "com.sameetdmr.zebra_printer/bluetooth");
     bluetoothManager = new BluetoothManager(flutterPluginBinding.getApplicationContext());
     bluetoothManager.setMethodCallHandler(bluetoothChannel);
+    // BluetoothManager already sets its own handler in setMethodCallHandler
   }
 
   @Override
   public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
-    // Tüm printer metotlarını PrinterManager'a yönlendir
-    printerManager.handleMethodCall(call, result);
+    // This method is no longer used - each channel has its own handler
+    // Kept for backwards compatibility
+    result.notImplemented();
   }
 
   @Override
