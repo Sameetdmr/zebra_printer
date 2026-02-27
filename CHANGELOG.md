@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3 - Descriptive Timeout & Export Optimization 🚀
+
+- Updated timeout error message in `PrinterManager` to be more descriptive and localized.
+- Reorganized exports in `zebra_printer.dart` for better internal structure.
+
 ## 0.3.2 - Documentation & Formatting 🧹
 
 - Shortened `README.md` usage examples to improve readability and refer to the full `example/` app.

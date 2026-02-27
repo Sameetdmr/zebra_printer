@@ -6,7 +6,7 @@
 /// Contains all status information available from PrinterStatus class in SDK
 class ZebraPrinterStatus {
   // ==================== BASIC STATUS ====================
-
+  
   /// Is printer ready to print? (SDK: isReadyToPrint)
   final bool isReadyToPrint;
 
@@ -99,30 +99,51 @@ class ZebraPrinterStatus {
       printMode: map['printMode'] as String?,
       address: map['address'] as String?,
       errorMessage: map['error'] as String? ?? map['errorMessage'] as String?,
-      timestamp: map['timestamp'] != null ? DateTime.fromMillisecondsSinceEpoch(map['timestamp'] as int) : DateTime.now(),
+      timestamp: map['timestamp'] != null 
+          ? DateTime.fromMillisecondsSinceEpoch(map['timestamp'] as int) 
+          : DateTime.now(),
     );
   }
 
   /// Creates an error status
   factory ZebraPrinterStatus.error(String message, {String? address}) {
-    return ZebraPrinterStatus(errorMessage: message, address: address);
+    return ZebraPrinterStatus(
+      errorMessage: message,
+      address: address,
+    );
   }
 
   /// Creates status indicating printer is disconnected
   factory ZebraPrinterStatus.disconnected({String? address}) {
-    return ZebraPrinterStatus(errorMessage: 'Yazıcı bağlı değil', address: address);
+    return ZebraPrinterStatus(
+      errorMessage: 'Yazıcı bağlı değil',
+      address: address,
+    );
   }
 
   // ==================== HELPER GETTERS ====================
 
   /// Returns true if printer has any error condition
   bool get hasError {
-    return isPaperOut || isHeadOpen || isHeadCold || isHeadTooHot || isRibbonOut || isReceiveBufferFull || errorMessage != null;
+    return isPaperOut || 
+           isHeadOpen || 
+           isHeadCold || 
+           isHeadTooHot || 
+           isRibbonOut || 
+           isReceiveBufferFull ||
+           errorMessage != null;
   }
 
   /// Returns true if printer can accept new print jobs
   bool get canPrint {
-    return isReadyToPrint && !isPaused && !isPaperOut && !isHeadOpen && !isHeadCold && !isHeadTooHot && !isRibbonOut && !isReceiveBufferFull;
+    return isReadyToPrint && 
+           !isPaused && 
+           !isPaperOut && 
+           !isHeadOpen && 
+           !isHeadCold && 
+           !isHeadTooHot && 
+           !isRibbonOut &&
+           !isReceiveBufferFull;
   }
 
   /// Returns true if printer is busy (printing or has jobs in queue)
@@ -256,6 +277,6 @@ class ZebraPrinterStatus {
 
   /// Returns a compact string for logging
   String toCompactString() {
-    return '[$statusCode] ${canPrint ? "✓" : "✗"} ${isBusy ? "BUSY" : "IDLE"} ${labelsRemainingInBatch > 0 ? "($labelsRemainingInBatch left)" : ""}';
+    return '[$statusCode] ${canPrint ? "✓" : "✗"} ${isBusy ? "BUSY" : "IDLE"} ${labelsRemainingInBatch > 0 ? "(${labelsRemainingInBatch} left)" : ""}';
   }
 }

@@ -2,15 +2,14 @@
 enum CalibrationType {
   /// Gap/web sensor calibration
   gap,
-
+  
   /// Bar/mark sensor calibration
   bar;
 
   /// Get ZPL command for calibration
   String get zplCommand {
-    const String baseCommand =
-        '! U1 setvar "wlan.country_code" "turkey" ! U1 setvar "media.type" "label"';
-
+    const String baseCommand = '! U1 setvar "wlan.country_code" "turkey" ! U1 setvar "media.type" "label"';
+    
     switch (this) {
       case CalibrationType.gap:
         return '$baseCommand ! U1 setvar "media.sense_mode" "gap" ! U1 AUTOCAL ~JC^XA^JUS^XZ';

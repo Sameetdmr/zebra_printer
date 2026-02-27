@@ -94,14 +94,7 @@ class BluetoothDevice {
   final bool isConnected;
 
   /// BluetoothDevice constructor
-  BluetoothDevice({
-    required this.address,
-    this.name,
-    BluetoothDeviceType? type,
-    BluetoothBondState? bondState,
-    this.isConnected = false,
-  }) : type = type ?? BluetoothDeviceType.unknown,
-       bondState = bondState ?? BluetoothBondState.none;
+  BluetoothDevice({required this.address, this.name, BluetoothDeviceType? type, BluetoothBondState? bondState, this.isConnected = false}) : type = type ?? BluetoothDeviceType.unknown, bondState = bondState ?? BluetoothBondState.none;
 
   /// Creates BluetoothDevice from Map
   factory BluetoothDevice.fromMap(Map<dynamic, dynamic> map) {
@@ -116,22 +109,12 @@ class BluetoothDevice {
 
   /// Converts to Map
   Map<String, dynamic> toMap() {
-    return {
-      'name': name,
-      'address': address,
-      'type': type.toInt(),
-      'bondState': bondState.toInt(),
-      'isConnected': isConnected,
-    };
+    return {'name': name, 'address': address, 'type': type.toInt(), 'bondState': bondState.toInt(), 'isConnected': isConnected};
   }
 
   /// Override for equality check
   @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is BluetoothDevice &&
-          runtimeType == other.runtimeType &&
-          address == other.address;
+  bool operator ==(Object other) => identical(this, other) || other is BluetoothDevice && runtimeType == other.runtimeType && address == other.address;
 
   /// Override for hash code
   @override

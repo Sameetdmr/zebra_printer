@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -52,16 +53,11 @@ public class PrinterManager {
     // Discovery state
     private boolean isDiscovering = false;
     
-    // ✅ ZEBRA SDK BEST PRACTICE: Close connection after each print
-    // "After completing print operations, always close the connection to free up resources"
-    // - Zebra Link-OS SDK Documentation
-    
-    // Connection management: Sadece pair, ihtiyaç anında connect
-    // Her yazdırma sonrası connection kapatılır (çoklu kullanıcı için)
-    
-    // Legacy connection state (connect/disconnect metodları için)
-    private Connection activeConnection = null;
-    private String connectedAddress = null;
+    // ✅ ZEBRA SDK BEST PRACTICE: Connection reuse for rapid successive prints
+    // "Keep connection open, call write() multiple times" - avoids Bluetooth stack
+    // open-close-open race on QLn620/ZQ620 and similar printers
+    private final Map<String, CachedConnection> connectionCache = new ConcurrentHashMap<>();
+    private static final long CONNECTION_IDLE_TIMEOUT_MS = 5000; // 5 sn - reuse penceresi
 
     /**
      * Constructor
@@ -79,6 +75,72 @@ public class PrinterManager {
      */
     public void setMethodChannel(MethodChannel methodChannel) {
         this.methodChannel = methodChannel;
+    }
+
+    private static class CachedConnection {
+        final Connection connection;
+        final String address;
+        Runnable closeRunnable;
+
+        CachedConnection(Connection conn, String addr) {
+            connection = conn;
+            address = addr;
+        }
+    }
+
+    private Connection getCachedConnection(String macAddress) {
+        CachedConnection cached = connectionCache.get(macAddress);
+        if (cached == null) return null;
+        if (!cached.connection.isConnected()) {
+            try { cached.connection.close(); } catch (Exception e) { logW("Error closing stale connection: " + e.getMessage()); }
+            connectionCache.remove(macAddress);
+            return null;
+        }
+        if (cached.closeRunnable != null) {
+            mainHandler.removeCallbacks(cached.closeRunnable);
+            cached.closeRunnable = null;
+        }
+        logD("♻️ Reusing cached connection for " + macAddress);
+        return cached.connection;
+    }
+
+    private void scheduleConnectionClose(String macAddress, Connection connection) {
+        CachedConnection existing = connectionCache.get(macAddress);
+        if (existing != null && existing.closeRunnable != null) {
+            mainHandler.removeCallbacks(existing.closeRunnable);
+        }
+        CachedConnection cached = new CachedConnection(connection, macAddress);
+        cached.closeRunnable = () -> executorService.execute(() -> {
+            CachedConnection toClose = connectionCache.get(macAddress);
+            if (toClose != null && toClose.connection == connection) {
+                try {
+                    connection.close();
+                    logD("🔒 Connection closed after idle timeout (freed for other users)");
+                } catch (Exception e) {
+                    logW("Error closing connection: " + e.getMessage());
+                }
+                connectionCache.remove(macAddress);
+            }
+        });
+        connectionCache.put(macAddress, cached);
+        mainHandler.postDelayed(cached.closeRunnable, CONNECTION_IDLE_TIMEOUT_MS);
+        logD("⏱️ Connection scheduled to close in " + CONNECTION_IDLE_TIMEOUT_MS + "ms (reuse window)");
+    }
+
+    private void closeCachedConnection(String macAddress, Connection connection) {
+        CachedConnection cached = connectionCache.get(macAddress);
+        if (cached != null && cached.closeRunnable != null) {
+            mainHandler.removeCallbacks(cached.closeRunnable);
+        }
+        connectionCache.remove(macAddress);
+        if (connection != null) {
+            try {
+                connection.close();
+                logD("🔒 Connection closed immediately");
+            } catch (Exception e) {
+                logW("Error closing connection: " + e.getMessage());
+            }
+        }
     }
 
     // ==================== PRINT PROGRESS CALLBACK ====================
@@ -645,9 +707,10 @@ public class PrinterManager {
     // ==================== CONNECTION METHODS ====================
     
     /**
-     * Zebra yazıcıya bağlanır ve bağlantıyı açık tutar
+     * Zebra yazıcıya bağlantı testi - SDK uyumlu: open → verify → close
+     * "Connect when needed, close when done" - kalıcı bağlantı tutulmaz
      * @param address Yazıcı adresi (MAC veya IP)
-     * @param result Sonuç callback'i - Boolean döndürür (true: başarılı, false/error: başarısız)
+     * @param result Sonuç callback'i - Boolean (true: erişilebilir, false/error: değil)
      */
     private void connectToPrinter(String address, @NonNull MethodChannel.Result result) {
         logD("connectToPrinter called for address: " + address);
@@ -658,60 +721,40 @@ public class PrinterManager {
             return;
         }
         
-        // ✅ ZEBRA SDK BEST PRACTICE: Connections are closed after each print
-        // Close existing legacy connection if any
-        if (activeConnection != null && address.equals(connectedAddress)) {
-            try {
-                logD("Closing existing legacy connection");
-                activeConnection.close();
-            } catch (Exception e) {
-                logW("Error closing existing connection: " + e.getMessage());
-            }
-            activeConnection = null;
-            connectedAddress = null;
-        }
-        
         executorService.execute(() -> {
-            // ⏱️ BENCHMARK START
+            Connection connection = null;
             long benchmarkStart = System.currentTimeMillis();
             long stepStart = benchmarkStart;
             
-            logD("════════════════════════════════════════════════════════");
-            logD("⏱️ BENCHMARK START - connectToPrinter (legacy)");
-            logD("   Address: " + address);
-            logD("════════════════════════════════════════════════════════");
-            
             try {
-                logD("⏱️ Opening Bluetooth connection to: " + address);
-                Connection connection = new BluetoothConnection(address);
+                logD("════════════════════════════════════════════════════════");
+                logD("connectToPrinter - Connection test (open → verify → close)");
+                logD("   Address: " + address);
+                logD("════════════════════════════════════════════════════════");
+                
+                logD("Opening Bluetooth connection to: " + address);
+                connection = new BluetoothConnection(address);
                 connection.open();
                 
                 long openDuration = System.currentTimeMillis() - stepStart;
-                logD("⏱️ [+" + openDuration + "ms] ✅ Connection opened");
+                logD("[+" + openDuration + "ms] ✅ Connection opened");
                 
-                // Bağlantı testi - yazıcının gerçek bir Zebra yazıcı olduğunu doğrula
                 stepStart = System.currentTimeMillis();
-                logD("⏱️ Verifying Zebra printer...");
+                logD("Verifying Zebra printer...");
                 ZebraPrinter printer = ZebraPrinterFactory.getInstance(connection);
                 PrinterLanguage language = printer.getPrinterControlLanguage();
                 
                 long verifyDuration = System.currentTimeMillis() - stepStart;
-                logD("⏱️ [+" + verifyDuration + "ms] ✅ Printer verified. Language: " + language.toString());
-                
-                // Legacy: Store connection for connect/disconnect API
-                activeConnection = connection;
-                connectedAddress = address;
+                logD("[+" + verifyDuration + "ms] ✅ Printer verified. Language: " + language.toString());
                 
                 long totalDuration = System.currentTimeMillis() - benchmarkStart;
                 logD("════════════════════════════════════════════════════════");
-                logD("⏱️ BENCHMARK END - Total Duration: " + totalDuration + "ms");
+                logD("connectToPrinter - Total Duration: " + totalDuration + "ms");
                 logD("════════════════════════════════════════════════════════");
                 
                 mainHandler.post(() -> {
                     logD("Connection successful!");
-                    result.success(true); // Boolean: başarılı
-                    
-                    // Callback gönder
+                    result.success(true);
                     if (methodChannel != null) {
                         Map<String, Object> connInfo = new HashMap<>();
                         connInfo.put("address", address);
@@ -719,19 +762,12 @@ public class PrinterManager {
                         methodChannel.invokeMethod("onConnectionStateChanged", connInfo);
                     }
                 });
-                
             } catch (Exception e) {
                 long totalDuration = System.currentTimeMillis() - benchmarkStart;
-                logE("⏱️ [+" + totalDuration + "ms] ❌ Connection error: " + e.getMessage());
+                logE("[+" + totalDuration + "ms] ❌ Connection error: " + e.getMessage());
                 logD("════════════════════════════════════════════════════════");
-                
-                activeConnection = null;
-                connectedAddress = null;
-                
                 mainHandler.post(() -> {
                     result.error("CONNECTION_FAILED", "Bağlantı hatası: " + e.getMessage(), e.toString());
-                    
-                    // Error callback gönder
                     if (methodChannel != null) {
                         Map<String, Object> errorInfo = new HashMap<>();
                         errorInfo.put("address", address);
@@ -740,6 +776,15 @@ public class PrinterManager {
                         methodChannel.invokeMethod("onConnectionStateChanged", errorInfo);
                     }
                 });
+            } finally {
+                if (connection != null) {
+                    try {
+                        connection.close();
+                        logD("🔒 Connection closed after verify");
+                    } catch (Exception e) {
+                        logW("Error closing connection: " + e.getMessage());
+                    }
+                }
             }
         });
     }
@@ -759,9 +804,19 @@ public class PrinterManager {
             return;
         }
         
-        // ✅ ZEBRA SDK BEST PRACTICE: Connections are closed after each print
-        // This method is now a no-op (legacy compatibility)
-        logD("⚠️ disconnectFromPrinter is legacy - connections auto-close after print");
+        // Connection cache temizle (SDK: explicit disconnect = release)
+        CachedConnection cached = connectionCache.get(address);
+        if (cached != null) {
+            if (cached.closeRunnable != null) {
+                mainHandler.removeCallbacks(cached.closeRunnable);
+            }
+            connectionCache.remove(address);
+            try {
+                cached.connection.close();
+            } catch (Exception e) {
+                logW("Error closing connection on disconnect: " + e.getMessage());
+            }
+        }
         
         mainHandler.post(() -> {
             logD("Disconnection acknowledged (no-op)");
@@ -778,23 +833,15 @@ public class PrinterManager {
     }
     
     /**
-     * Yazıcıya bağlı olup olmadığını kontrol eder
-     * ✅ ZEBRA SDK BEST PRACTICE: Connections are closed after each print
-     * @param address Kontrol edilecek yazıcı adresi
-     * @return Bağlantı durumu (artık her zaman false - legacy compatibility)
+     * Yazıcı için cache'te açık connection var mı kontrol eder
+     * SDK: Connection reuse penceresinde (idle timeout) true dönebilir
+     * @param address Yazıcı adresi
+     * @return Cache'te geçerli bağlantı varsa true
      */
     private boolean isConnected(String address) {
-        logD("isConnected check for address: " + address);
-        logD("⚠️ isConnected is legacy - connections auto-close after print");
-        
-        // Legacy activeConnection kontrolü (connect/disconnect için)
-        if (activeConnection != null && address != null && address.equals(connectedAddress)) {
-            boolean connected = activeConnection.isConnected();
-            logD("Legacy connection status for " + address + ": " + connected);
-            return connected;
-        }
-        
-        return false; // Artık cache yok, her print sonrası kapanıyor
+        if (address == null || address.isEmpty()) return false;
+        CachedConnection cached = connectionCache.get(address);
+        return cached != null && cached.connection.isConnected();
     }
     
     // ==================== PRINTING METHODS ====================
@@ -831,38 +878,39 @@ public class PrinterManager {
 
         Connection connection = null;
         ZebraPrinter printer = null;
+        boolean success = false;
         
         try {
-            // ✅ ZEBRA SDK BEST PRACTICE: Open connection when needed
-            // "After completing print operations, always close the connection to free up resources"
-            stepStart = System.currentTimeMillis();
-            logD("⏱️ Opening connection to: " + macAddress);
+            // ✅ SDK Connection Reuse: Try cached connection first (rapid successive prints)
+            connection = getCachedConnection(macAddress);
             
-            // ✅ FAST FAIL: Yazıcı kapalı/hatalıysa hemen bilgilendir (retry yok)
-            // Business requirement: Kullanıcıyı bekletmeden hızlı feedback
-            try {
-                connection = new BluetoothConnection(macAddress);
-                connection.open();
+            if (connection == null) {
+                stepStart = System.currentTimeMillis();
+                logD("⏱️ Opening connection to: " + macAddress);
                 
-                long openDuration = System.currentTimeMillis() - stepStart;
-                logD("⏱️ [+" + openDuration + "ms] ✅ Connection opened successfully");
-                
-            } catch (ConnectionException e) {
-                long attemptDuration = System.currentTimeMillis() - stepStart;
-                logE("⏱️ [+" + attemptDuration + "ms] ❌ Connection failed: " + e.getMessage());
-                
-                // ✅ Kullanıcı dostu hata mesajı
-                String userMessage;
-                if (e.getMessage().contains("timeout") || e.getMessage().contains("timed out")) {
-                    userMessage = "Yazıcıya ulaşılamıyor. Yazıcının açık ve yakında olduğundan emin olun.";
-                } else if (e.getMessage().contains("refused") || e.getMessage().contains("failed")) {
-                    userMessage = "Yazıcı bağlantısı reddedildi. Yazıcının açık olduğundan emin olun.";
-                } else {
-                    userMessage = "Bağlantı hatası: " + e.getMessage();
+                try {
+                    connection = new BluetoothConnection(macAddress);
+                    connection.open();
+                    
+                    long openDuration = System.currentTimeMillis() - stepStart;
+                    logD("⏱️ [+" + openDuration + "ms] ✅ Connection opened successfully");
+                    
+                } catch (ConnectionException e) {
+                    long attemptDuration = System.currentTimeMillis() - stepStart;
+                    logE("⏱️ [+" + attemptDuration + "ms] ❌ Connection failed: " + e.getMessage());
+                    
+                    String userMessage;
+                    if (e.getMessage().contains("timeout") || e.getMessage().contains("timed out")) {
+                        userMessage = "Yazıcıya ulaşılamıyor. Yazıcının açık ve yakında olduğundan emin olun.";
+                    } else if (e.getMessage().contains("refused") || e.getMessage().contains("failed")) {
+                        userMessage = "Yazıcı bağlantısı reddedildi. Yazıcının açık olduğundan emin olun.";
+                    } else {
+                        userMessage = "Bağlantı hatası: " + e.getMessage();
+                    }
+                    
+                    sendPrintError(userMessage, macAddress);
+                    throw new ConnectionException(userMessage, e);
                 }
-                
-                sendPrintError(userMessage, macAddress);
-                throw new ConnectionException(userMessage, e);
             }
             
             // 📊 Progress: CONNECTED (20%)
@@ -969,18 +1017,17 @@ public class PrinterManager {
             
             // 📊 Progress: COMPLETED (100%)
             sendPrintProgress(PRINT_STATE_COMPLETED, 100, "Yazdırma tamamlandı", macAddress);
+            success = true;
 
         } catch (Exception e) {
-            throw e; // Exception'ı yukarı fırlat
-        } finally {
-            // ✅ ZEBRA SDK BEST PRACTICE: Always close connection after print
             if (connection != null) {
-                try {
-                    connection.close();
-                    logD("🔒 Connection closed (freed for other users)");
-                } catch (Exception closeEx) {
-                    logW("Error closing connection: " + closeEx.getMessage());
-                }
+                closeCachedConnection(macAddress, connection);
+                connection = null;
+            }
+            throw e;
+        } finally {
+            if (success && connection != null) {
+                scheduleConnectionClose(macAddress, connection);
             }
             
             // ⏱️ BENCHMARK END - TOTAL DURATION
@@ -1029,36 +1076,38 @@ public class PrinterManager {
         sendBatchPrintProgress(PRINT_STATE_CONNECTING, 5, 0, totalLabels, macAddress);
         
         Connection connection = null;
+        boolean batchSuccess = false;
         
         try {
-            // ✅ ZEBRA SDK BEST PRACTICE: Open connection when needed
-            stepStart = System.currentTimeMillis();
-            logD("⏱️ Opening connection to: " + macAddress + " (batch mode)");
+            connection = getCachedConnection(macAddress);
             
-            // ✅ FAST FAIL: Yazıcı kapalı/hatalıysa hemen bilgilendir (retry yok)
-            try {
-                connection = new BluetoothConnection(macAddress);
-                connection.open();
+            if (connection == null) {
+                stepStart = System.currentTimeMillis();
+                logD("⏱️ Opening connection to: " + macAddress + " (batch mode)");
                 
-                long openDuration = System.currentTimeMillis() - stepStart;
-                logD("⏱️ [+" + openDuration + "ms] ✅ Connection opened successfully (batch mode)");
-                
-            } catch (ConnectionException e) {
-                long attemptDuration = System.currentTimeMillis() - stepStart;
-                logE("⏱️ [+" + attemptDuration + "ms] ❌ Connection failed: " + e.getMessage());
-                
-                // ✅ Kullanıcı dostu hata mesajı
-                String userMessage;
-                if (e.getMessage().contains("timeout") || e.getMessage().contains("timed out")) {
-                    userMessage = "Yazıcıya ulaşılamıyor. Yazıcının açık ve yakında olduğundan emin olun.";
-                } else if (e.getMessage().contains("refused") || e.getMessage().contains("failed")) {
-                    userMessage = "Yazıcı bağlantısı reddedildi. Yazıcının açık olduğundan emin olun.";
-                } else {
-                    userMessage = "Bağlantı hatası: " + e.getMessage();
+                try {
+                    connection = new BluetoothConnection(macAddress);
+                    connection.open();
+                    
+                    long openDuration = System.currentTimeMillis() - stepStart;
+                    logD("⏱️ [+" + openDuration + "ms] ✅ Connection opened successfully (batch mode)");
+                    
+                } catch (ConnectionException e) {
+                    long attemptDuration = System.currentTimeMillis() - stepStart;
+                    logE("⏱️ [+" + attemptDuration + "ms] ❌ Connection failed: " + e.getMessage());
+                    
+                    String userMessage;
+                    if (e.getMessage().contains("timeout") || e.getMessage().contains("timed out")) {
+                        userMessage = "Yazıcıya ulaşılamıyor. Yazıcının açık ve yakında olduğundan emin olun.";
+                    } else if (e.getMessage().contains("refused") || e.getMessage().contains("failed")) {
+                        userMessage = "Yazıcı bağlantısı reddedildi. Yazıcının açık olduğundan emin olun.";
+                    } else {
+                        userMessage = "Bağlantı hatası: " + e.getMessage();
+                    }
+                    
+                    sendPrintError(userMessage, macAddress);
+                    throw new ConnectionException(userMessage, e);
                 }
-                
-                sendPrintError(userMessage, macAddress);
-                throw new ConnectionException(userMessage, e);
             }
             
             // 📊 Batch Progress: CONNECTED (10%)
@@ -1182,18 +1231,17 @@ public class PrinterManager {
             
             // 📊 Batch Progress: COMPLETED (100%)
             sendBatchPrintProgress(PRINT_STATE_COMPLETED, 100, totalLabels, totalLabels, macAddress);
+            batchSuccess = true;
             
         } catch (Exception e) {
+            if (connection != null) {
+                closeCachedConnection(macAddress, connection);
+                connection = null;
+            }
             throw e;
         } finally {
-            // ✅ ZEBRA SDK BEST PRACTICE: Always close connection after print
-            if (connection != null) {
-                try {
-                    connection.close();
-                    logD("🔒 Connection closed (freed for other users)");
-                } catch (Exception closeEx) {
-                    logW("Error closing connection: " + closeEx.getMessage());
-                }
+            if (batchSuccess && connection != null) {
+                scheduleConnectionClose(macAddress, connection);
             }
             
             // ⏱️ BENCHMARK END - TOTAL DURATION
@@ -1407,24 +1455,24 @@ public class PrinterManager {
         }
     }
 
-    
     /**
-     * 🔌 Legacy connection'ı kapat (connect/disconnect için)
-     * Not: Artık cache yok, her print sonrası otomatik kapanıyor
+     * Tüm cache'teki connection'ları kapatır
+     * dispose() öncesi veya gerektiğinde çağrılır
      */
     public void closeActiveConnection() {
-        logD("🔌 closeActiveConnection called (legacy method)");
-        
-        if (activeConnection != null) {
-            try {
-                activeConnection.close();
-                logD("🔌 Closed legacy connection to: " + connectedAddress);
-            } catch (Exception e) {
-                logW("Error closing legacy connection: " + e.getMessage());
+        logD("🔌 closeActiveConnection - clearing connection cache");
+        for (Map.Entry<String, CachedConnection> entry : new HashMap<>(connectionCache).entrySet()) {
+            CachedConnection cached = entry.getValue();
+            if (cached.closeRunnable != null) {
+                mainHandler.removeCallbacks(cached.closeRunnable);
             }
-            activeConnection = null;
-            connectedAddress = null;
+            try {
+                cached.connection.close();
+            } catch (Exception e) {
+                logW("Error closing connection: " + e.getMessage());
+            }
         }
+        connectionCache.clear();
     }
     
     // ==================== LOGGING HELPERS ====================
@@ -1502,11 +1550,8 @@ public class PrinterManager {
      * Kaynakları temizler
      */
     public void dispose() {
-        // Pool'daki tüm connection'ları kapat
         logD("🧹 Disposing PrinterManager, closing all connections...");
         closeActiveConnection();
-        
-        // Discovery'yi durdur
         isDiscovering = false;
         
         // ExecutorService'i kapat
