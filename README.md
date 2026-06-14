@@ -3,43 +3,32 @@
 [![pub package](https://img.shields.io/pub/v/zebra_printer.svg)](https://pub.dev/packages/zebra_printer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A robust Flutter package for **Zebra Link-OS™ Printers**. Unlike generic Bluetooth plugins, this package leverages the official **Zebra SDK** to provide professional-grade discovery, status monitoring, and high-performance printing.
+Flutter package for **Zebra Link-OS™ Printers**. Uses the official **Zebra SDK** for discovery, status monitoring, ZPL printing, and printer management.
 
-## 🚀 Key Features
-
-- 🔍 **Professional Discovery**: Find Zebra printers via **Bluetooth** and **Network** using official Zebra SDK discovery algorithms.
-- ⚡ **Batch Printing**: Print multiple labels in a single connection session—optimized for high-volume tasks.
-- 📊 **Real-time Status**: Monitor paper out, head open, and pause states before you print.
-- ℹ️ **Device Intelligence**: Fetch model names, serial numbers, and firmware versions automatically.
-- 🛡️ **SDK-Powered Stability**: Built on Zebra Link-OS™ SDK for maximum compatibility and reliability.
-- 🎯 **Type-Safe Models**: Modern Dart API with structured models for all printer data.
+> **Platform:** Android only (API 21+)
 
 ---
 
-## 🏗️ Architecture
+## Features
 
-This package offers two managers to suit your needs:
-
-1.  **PrinterManager (Recommended)**: The core of the package. Uses the **Zebra Link-OS™ SDK**. Perfect for high-reliability production environments and detailed printer management.
-2.  **BluetoothManager**: A lightweight utility for generic Bluetooth operations (scanning, pairing) using the standard Android API.
+- Bluetooth & Network discovery via Zebra SDK
+- Safe single & batch printing with lock & progress tracking
+- Full printer status (`ZebraPrinterStatus`) and device info (`PrinterInfo`)
+- Font upload to printer flash (`uploadFont`, `uploadFontData`)
+- Generic Bluetooth pairing via `BluetoothManager`
 
 ---
 
-## 📦 Installation
-
-Add the package to your `pubspec.yaml`:
+## Installation
 
 ```yaml
 dependencies:
-  zebra_printer: latest_version
+  zebra_printer: ^0.4.1
 ```
 
-### Android Configuration
-
-Requires Android 5.0 (API 21) or higher. Add permissions to `AndroidManifest.xml`:
+Add to `AndroidManifest.xml`:
 
 ```xml
-<!-- Bluetooth & Network Permissions -->
 <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
 <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
 <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
@@ -50,51 +39,90 @@ Requires Android 5.0 (API 21) or higher. Add permissions to `AndroidManifest.xml
 
 ---
 
-## 🛠️ Usage
+## API Overview
 
-For a complete, production-ready implementation with UI, progress tracking and batch printing, please check the **[example folder](https://github.com/Sameetdmr/zebra_printer/tree/main/example)**.
+### PrinterManager — Zebra SDK
 
-### Quick Overview
+| Method | Description |
+|---|---|
+| `startDiscovery(type)` | Find printers (`bluetooth` / `network` / `both`) |
+| `stopDiscovery()` | Stop active discovery |
+| `connect(address)` | Open persistent connection |
+| `disconnect({address})` | Close connection |
+| `isConnected({address})` | Check connection state |
+| `safePrint(address, zpl)` | Print with lock & progress |
+| `safeBatchPrint(address, zplList)` | Batch print in one session |
+| `getZebraPrinterStatus(address)` | Full status (`isReadyToPrint`, paper out, etc.) |
+| `getPrinterInfo(address)` | Model, serial, firmware |
+| `canPrint(address)` | Quick readiness check |
+| `isPrinterBusy(address)` | Check if printer is busy |
+| `waitForPrinterReady(address)` | Poll until ready or timeout |
+| `calibratePrinter(address, type)` | Gap/bar calibration |
+| `printTestLabel(address)` | Send built-in test label |
+| `uploadFont(address, assetPath)` | Upload font from assets |
+| `uploadFontData(address, bytes)` | Upload font from raw bytes |
+| `getPairedPrinters()` | List paired Bluetooth devices |
+| `unpairPrinter(address)` | Remove device pairing |
+| `dispose()` / `reinitialize()` | Lifecycle management |
+
+**Callbacks:** `onPrinterFound`, `onDiscoveryFinished`, `onConnectionStateChanged`, `onPrintProgress`
+
+### BluetoothManager — Android Bluetooth API
+
+| Method | Description |
+|---|---|
+| `startDiscovery()` / `stopDiscovery()` | Scan for devices |
+| `getBondedDevices()` | List paired devices |
+| `pairDevice(address)` / `unpairDevice(address)` | Pairing management |
+| `connect(address)` / `disconnect()` | Generic BT connection |
+| `isBluetoothEnabled()` | Check BT state |
+| `dispose()` / `reinitialize()` | Lifecycle management |
+
+**Streams:** `onDeviceFound`, `onDiscoveryFinished`, `onConnectionStateChanged`, `onScanStateChanged`
+
+---
+
+## Quick Start
 
 ```dart
 import 'package:zebra_printer/zebra_printer.dart';
 
-final manager = PrinterManager();
+final printer = PrinterManager();
 
-// 1. Discover Printers
-await manager.startDiscovery(type: DiscoveryType.bluetooth);
+// Callbacks
+printer.onPrinterFound = (p) => print('Found: ${p.name}');
+printer.onPrintProgress = (p) => print('${p.percentage}% — ${p.message}');
 
-// 2. Safe Print (built-in lock & progress)
-await manager.safePrint('AC:3F:A4:XX:XX:XX', '^XA^FO50,50^FDTest Label^FS^XZ');
+// Discover & print
+await printer.startDiscovery(type: DiscoveryType.bluetooth);
+await printer.safePrint('AC:3F:A4:XX:XX:XX', '^XA^FO50,50^FDTest^FS^XZ');
 
-// 3. Batch Print
-await manager.safeBatchPrint('AC:3F:A4:XX:XX:XX', ['^XA^FDLabel 1^XZ', '^XA^FDLabel 2^XZ']);
+// Status & info
+final status = await printer.getZebraPrinterStatus('AC:3F:A4:XX:XX:XX');
+final info = await printer.getPrinterInfo('AC:3F:A4:XX:XX:XX');
 
-// 4. Status Check
-final status = await manager.getZebraPrinterStatus('AC:3F:A4:XX:XX:XX');
-if (status.isReadyToPrint) print('Printer is ready!');
+// Font upload (0.4.0+)
+await printer.uploadFont('AC:3F:A4:XX:XX:XX', 'assets/fonts/arial.zpl');
+
+// Cleanup
+printer.dispose();
 ```
 
----
-
-## 🔧 Troubleshooting
-
-- **Printer Not Found**: Ensure Bluetooth and Location services are ON. Grant permissions in system settings.
-- **Connection Failed**: Ensure the printer isn't connected to another device. Zebra Bluetooth printers usually support only one active connection.
-- **Print Quality**: Use `calibratePrinter(address, CalibrationType.gap)` if your labels aren't aligned.
+Full UI example with progress tracking: **[example/](https://github.com/Sameetdmr/zebra_printer/tree/main/example)**
 
 ---
 
-## 📑 ZPL Resource Tips
+## Troubleshooting
 
-- Use the [Zebra Labelary Viewer](http://labelary.com/viewer.html) to test your ZPL code.
-- Always wrap your code with `^XA` and `^XZ`.
+| Issue | Solution |
+|---|---|
+| Printer not found | Enable Bluetooth & Location, grant permissions |
+| Connection failed | Printer may be connected to another device |
+| Misaligned labels | `calibratePrinter(address, CalibrationType.gap)` |
+| ZPL preview | [Labelary Viewer](http://labelary.com/viewer.html) — wrap with `^XA` / `^XZ` |
 
-## 📜 Credits
+---
 
-- Powered by [Zebra Link-OS™ SDK](https://www.zebra.com/us/en/support-downloads/software/developer-tools/link-os-sdk.html)
-- Developed and maintained by [Samed Demir](https://github.com/Sameetdmr)
+## License
 
-## ⚖️ License
-
-MIT License - Copyright (c) 2025 Samed Demir
+MIT — Copyright (c) 2025 [Samed Demir](https://github.com/Sameetdmr) · Powered by [Zebra Link-OS™ SDK](https://www.zebra.com/us/en/support-downloads/software/developer-tools/link-os-sdk.html)

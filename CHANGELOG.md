@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 - README API Overview 📝
+
+- Rewrote README with concise API tables for `PrinterManager` and `BluetoothManager`.
+- Added quick start examples for callbacks, font upload, and lifecycle.
+- Added Android-only platform note and troubleshooting table.
+
 ## 0.4.0 - Font Upload & Lifecycle Management 🎨
 
 - **New Features**
