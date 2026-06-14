@@ -948,6 +948,126 @@ class PrinterManager {
   /// Check if logging is enabled on Dart side
   bool get isLoggingEnabled => _config.isLoggingEnabled;
 
+  // ==================== FONT MANAGEMENT ====================
+  
+  /// Uploads a font to the printer from assets
+  /// ZPL font file is automatically parsed to extract font name
+  ///
+  /// [macAddress] - The MAC address of the printer
+  /// [assetPath] - Path to the font asset (e.g., "assets/arial/arial.zpl")  
+  ///
+  /// Returns [true] if upload was successful, [false] otherwise
+  ///
+  /// Throws [Exception] if the operation fails
+  ///
+  /// Example:
+  /// ```dart
+  /// final success = await printerManager.uploadFont(
+  ///   "00:07:80:12:34:56",
+  ///   "assets/arial/arial.zpl"
+  /// );
+  /// ```
+  Future<bool> uploadFont(String macAddress, String assetPath) async {
+    if (macAddress.isEmpty) {
+      throw Exception("MAC address cannot be empty.");
+    }
+    
+    if (assetPath.isEmpty) {
+      throw Exception("Asset path cannot be empty.");
+    }
+
+    try {
+      // Read the asset to extract font name
+      final ByteData data = await rootBundle.load(assetPath);
+      final Uint8List fontData = data.buffer.asUint8List();
+      final String fontName = _extractFontNameFromZpl(fontData);
+      
+      _config.log('📁 Uploading font: $assetPath to $macAddress as $fontName');
+      
+      final bool result = await _channel.invokeMethod<bool>('uploadFont', {
+        'address': macAddress,
+        'assetPath': assetPath,
+        'fontType': fontName,
+      }) ?? false;
+
+      if (result) {
+        _config.log('✅ Font upload successful: $fontName');
+      } else {
+        _config.log('❌ Font upload failed: $fontName');
+      }
+      
+      return result;
+      
+    } catch (e) {
+      _config.log('❌ Font upload error: $e');
+      throw Exception('Font upload failed: $e');
+    }
+  }
+
+  /// Upload font data directly from byte array
+  /// ZPL font file is automatically parsed to extract font name
+  Future<bool> uploadFontData(String macAddress, Uint8List fontData) async {
+    if (macAddress.isEmpty) {
+      throw Exception("MAC address cannot be empty.");
+    }
+    
+    if (fontData.isEmpty) {
+      throw Exception("Font data cannot be empty.");
+    }
+
+    try {
+      // Extract font name from ZPL data (e.g., "~DYE:arial,B,T,915212" -> "arial")
+      String fontName = _extractFontNameFromZpl(fontData);
+      
+      _config.log('📁 Uploading font data: ${fontData.length} bytes to $macAddress as $fontName');
+      
+      final bool result = await _channel.invokeMethod<bool>('uploadFontData', {
+        'address': macAddress,
+        'fontData': fontData,
+        'fontType': fontName,
+      }) ?? false;
+
+      if (result) {
+        _config.log('✅ Font data upload successful: $fontName');
+      } else {
+        _config.log('❌ Font data upload failed: $fontName');
+      }
+      
+      return result;
+      
+    } catch (e) {
+      _config.log('❌ Font data upload error: $e');
+      throw Exception('Font data upload failed: $e');
+    }
+  }
+
+  /// Extracts font name from ZPL font data
+  /// Parses "~DYE:fontname,..." format
+  String _extractFontNameFromZpl(Uint8List fontData) {
+    try {
+      // Convert first 100 bytes to string to find the font name
+      final String header = String.fromCharCodes(fontData.take(100));
+      
+      // Look for ~DYE:fontname pattern
+      final RegExp dyePattern = RegExp(r'~?DYE?:([^,]+)');
+      final Match? match = dyePattern.firstMatch(header);
+      
+      if (match != null && match.group(1) != null) {
+        final String fontName = match.group(1)!.trim();
+        _config.log('🔍 Extracted font name from ZPL: $fontName');
+        return fontName;
+      }
+      
+      // Fallback: use "font" as default name
+      _config.log('⚠️ Could not extract font name from ZPL, using default: "font"');
+      return "font";
+      
+    } catch (e) {
+      _config.log('⚠️ Error extracting font name: $e, using default: "font"');
+      return "font";
+    }
+  }
+
   // ==================== LIFECYCLE ====================
 
   /// Disposes the PrinterManager and cleans up resources

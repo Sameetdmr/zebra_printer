@@ -14,6 +14,7 @@ import com.zebra.sdk.printer.PrinterLanguage;
 import com.zebra.sdk.printer.PrinterStatus;
 import com.zebra.sdk.printer.ZebraPrinter;
 import com.zebra.sdk.printer.ZebraPrinterFactory;
+import com.zebra.sdk.printer.ZebraPrinterLinkOs;
 import com.zebra.sdk.printer.ZebraPrinterLanguageUnknownException;
 import com.zebra.sdk.printer.SGD;
 import com.zebra.sdk.printer.discovery.DiscoveredPrinter;
@@ -23,6 +24,9 @@ import com.zebra.sdk.printer.discovery.DiscoveryHandler;
 import com.zebra.sdk.printer.discovery.BluetoothDiscoverer;
 import com.zebra.sdk.printer.discovery.NetworkDiscoverer;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -31,6 +35,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
@@ -57,7 +62,7 @@ public class PrinterManager {
     // "Keep connection open, call write() multiple times" - avoids Bluetooth stack
     // open-close-open race on QLn620/ZQ620 and similar printers
     private final Map<String, CachedConnection> connectionCache = new ConcurrentHashMap<>();
-    private static final long CONNECTION_IDLE_TIMEOUT_MS = 5000; // 5 sn - reuse penceresi
+    private static final long CONNECTION_IDLE_TIMEOUT_MS = 2000; // 2 sn - reuse penceresi
 
     /**
      * Constructor
@@ -134,12 +139,15 @@ public class PrinterManager {
         }
         connectionCache.remove(macAddress);
         if (connection != null) {
-            try {
-                connection.close();
-                logD("🔒 Connection closed immediately");
-            } catch (Exception e) {
-                logW("Error closing connection: " + e.getMessage());
-            }
+            final Connection connToClose = connection;
+            executorService.submit(() -> {
+                try {
+                    connToClose.close();
+                    logD("🔒 Connection closed in background");
+                } catch (Exception e) {
+                    logW("Error closing connection: " + e.getMessage());
+                }
+            });
         }
     }
 
@@ -254,7 +262,7 @@ public class PrinterManager {
         Map<String, Object> progressData = new HashMap<>();
         progressData.put("state", state);
         progressData.put("percentage", percentage);
-        progressData.put("message", "Printing label " + currentLabel + " of " + totalLabels);
+        progressData.put("message", currentLabel + "/" + totalLabels);
         progressData.put("currentLabel", currentLabel);
         progressData.put("totalLabels", totalLabels);
         progressData.put("address", address);
@@ -277,14 +285,13 @@ public class PrinterManager {
         Map<String, Object> progressData = new HashMap<>();
         progressData.put("state", state);
         progressData.put("percentage", percentage);
-        progressData.put("message", "Etiket " + currentLabel + "/" + totalLabels + " yazdırılıyor");
+        progressData.put("message", currentLabel + "/" + totalLabels);
         progressData.put("currentLabel", currentLabel);
         progressData.put("totalLabels", totalLabels);
         progressData.put("address", address);
         progressData.put("timestamp", System.currentTimeMillis());
         progressData.put("isBatch", true);
         
-        // 🎯 Add PrinterStatus from Zebra SDK
         if (status != null) {
             progressData.put("isPaperOut", status.isPaperOut);
             progressData.put("isHeadOpen", status.isHeadOpen);
@@ -350,9 +357,9 @@ public class PrinterManager {
                 executorService.execute(() -> {
                     try {
                         sendZplToPrinter(macAddress, zplData);
-                        mainHandler.post(() -> result.success("Baskı başarılı: " + macAddress));
+                        mainHandler.post(() -> result.success("Print successful: " + macAddress));
                     } catch (Exception e) {
-                        final String errorMessage = "Yazıcı veya Bağlantı Hatası: " + e.getMessage();
+                        final String errorMessage = "Printer or connection error: " + e.getMessage();
                         mainHandler.post(() -> result.error("PRINT_FAIL", errorMessage, e.toString()));
                     }
                 });
@@ -364,10 +371,42 @@ public class PrinterManager {
                 executorService.execute(() -> {
                     try {
                         sendMultipleZplToPrinter(batchMacAddress, zplList);
-                        mainHandler.post(() -> result.success("Batch baskı başarılı: " + batchMacAddress + " (" + zplList.size() + " etiket)"));
+                        mainHandler.post(() -> result.success("Batch print successful: " + batchMacAddress + " (" + zplList.size() + " labels)"));
                     } catch (Exception e) {
-                        final String errorMessage = "Batch yazıcı veya Bağlantı Hatası: " + e.getMessage();
+                        final String errorMessage = "Batch printer or connection error: " + e.getMessage();
                         mainHandler.post(() -> result.error("BATCH_PRINT_FAIL", errorMessage, e.toString()));
+                    }
+                });
+                break;
+                
+            // Font Upload Method
+            case "uploadFont":
+                final String fontMacAddress = call.argument("address");
+                final String assetPath = call.argument("assetPath");
+                final String fontType = call.argument("fontType");
+                executorService.execute(() -> {
+                    try {
+                        boolean success = uploadFontToprinter(fontMacAddress, assetPath, fontType);
+                        mainHandler.post(() -> result.success(success));
+                    } catch (Exception e) {
+                        final String errorMessage = "Font upload error: " + e.getMessage();
+                        mainHandler.post(() -> result.error("FONT_UPLOAD_FAIL", errorMessage, e.toString()));
+                    }
+                });
+                break;
+                
+            // Font Upload with Data Method
+            case "uploadFontData":
+                final String fontDataMacAddress = call.argument("address");
+                final byte[] fontDataBytes = call.argument("fontData");
+                final String fontDataType = call.argument("fontType");
+                executorService.execute(() -> {
+                    try {
+                        boolean success = uploadFontDataToPrinter(fontDataMacAddress, fontDataBytes, fontDataType);
+                        mainHandler.post(() -> result.success(success));
+                    } catch (Exception e) {
+                        final String errorMessage = "Font data upload error: " + e.getMessage();
+                        mainHandler.post(() -> result.error("FONT_UPLOAD_FAIL", errorMessage, e.toString()));
                     }
                 });
                 break;
@@ -439,7 +478,7 @@ public class PrinterManager {
         
         if (isDiscovering) {
             logW("Already discovering, returning error");
-            result.error("ALREADY_DISCOVERING", "Zaten keşif işlemi devam ediyor", null);
+            result.error("ALREADY_DISCOVERING", "Discovery already in progress", null);
             return;
         }
         
@@ -595,7 +634,7 @@ public class PrinterManager {
         
         if (address == null || address.isEmpty()) {
             logE("Invalid address provided");
-            result.error("INVALID_ADDRESS", "Geçersiz cihaz adresi", null);
+            result.error("INVALID_ADDRESS", "Invalid device address", null);
             return;
         }
         
@@ -634,7 +673,7 @@ public class PrinterManager {
             } catch (Exception e) {
                 logE("Unpair error: " + e.getMessage());
                 e.printStackTrace();
-                mainHandler.post(() -> result.error("UNPAIR_FAILED", "Eşleşme kaldırma hatası: " + e.getMessage(), e.toString()));
+                mainHandler.post(() -> result.error("UNPAIR_FAILED", "Unpair error: " + e.getMessage(), e.toString()));
             }
         });
     }
@@ -717,7 +756,7 @@ public class PrinterManager {
         
         if (address == null || address.isEmpty()) {
             logE("Invalid address provided");
-            result.error("INVALID_ADDRESS", "Geçersiz yazıcı adresi", null);
+            result.error("INVALID_ADDRESS", "Invalid printer address", null);
             return;
         }
         
@@ -767,7 +806,7 @@ public class PrinterManager {
                 logE("[+" + totalDuration + "ms] ❌ Connection error: " + e.getMessage());
                 logD("════════════════════════════════════════════════════════");
                 mainHandler.post(() -> {
-                    result.error("CONNECTION_FAILED", "Bağlantı hatası: " + e.getMessage(), e.toString());
+                    result.error("CONNECTION_FAILED", "Connection error: " + e.getMessage(), e.toString());
                     if (methodChannel != null) {
                         Map<String, Object> errorInfo = new HashMap<>();
                         errorInfo.put("address", address);
@@ -800,7 +839,7 @@ public class PrinterManager {
         // Eğer address null veya boşsa hata ver
         if (address == null || address.isEmpty()) {
             logD("Address is null or empty");
-            result.error("INVALID_ADDRESS", "Yazıcı adresi gerekli", null);
+            result.error("INVALID_ADDRESS", "Printer address required", null);
             return;
         }
         
@@ -869,16 +908,15 @@ public class PrinterManager {
         logD("════════════════════════════════════════════════════════");
 
         if (macAddress == null || zplData == null || macAddress.isEmpty() || zplData.isEmpty()) {
-            sendPrintError("MAC adresi veya ZPL verisi boş olamaz.", macAddress);
-            throw new IllegalArgumentException("MAC adresi veya ZPL verisi boş olamaz.");
+            throw new IllegalArgumentException("MAC address or ZPL data cannot be empty");
         }
 
-        // 📊 Progress: IDLE -> CONNECTING (0% -> 10%)
-        sendPrintProgress(PRINT_STATE_CONNECTING, 10, "Yazıcıya bağlanılıyor...", macAddress);
+        sendPrintProgress(PRINT_STATE_CONNECTING, 10, "", macAddress);
 
         Connection connection = null;
         ZebraPrinter printer = null;
         boolean success = false;
+        boolean errorAlreadySent = false;
         
         try {
             // ✅ SDK Connection Reuse: Try cached connection first (rapid successive prints)
@@ -888,101 +926,93 @@ public class PrinterManager {
                 stepStart = System.currentTimeMillis();
                 logD("⏱️ Opening connection to: " + macAddress);
                 
-                try {
-                    connection = new BluetoothConnection(macAddress);
-                    connection.open();
-                    
-                    long openDuration = System.currentTimeMillis() - stepStart;
-                    logD("⏱️ [+" + openDuration + "ms] ✅ Connection opened successfully");
-                    
-                } catch (ConnectionException e) {
-                    long attemptDuration = System.currentTimeMillis() - stepStart;
-                    logE("⏱️ [+" + attemptDuration + "ms] ❌ Connection failed: " + e.getMessage());
-                    
-                    String userMessage;
-                    if (e.getMessage().contains("timeout") || e.getMessage().contains("timed out")) {
-                        userMessage = "Yazıcıya ulaşılamıyor. Yazıcının açık ve yakında olduğundan emin olun.";
-                    } else if (e.getMessage().contains("refused") || e.getMessage().contains("failed")) {
-                        userMessage = "Yazıcı bağlantısı reddedildi. Yazıcının açık olduğundan emin olun.";
-                    } else {
-                        userMessage = "Bağlantı hatası: " + e.getMessage();
+                int maxRetries = 3;
+                ConnectionException lastException = null;
+                
+                for (int attempt = 0; attempt <= maxRetries; attempt++) {
+                    try {
+                        connection = new BluetoothConnection(macAddress);
+                        connection.open();
+                        
+                        long openDuration = System.currentTimeMillis() - stepStart;
+                        logD("⏱️ [+" + openDuration + "ms] ✅ Connection opened successfully" + (attempt > 0 ? " (retry #" + attempt + ")" : ""));
+                        lastException = null;
+                        break;
+                    } catch (ConnectionException e) {
+                        // Zebra SDK best practice: open() başarısız olsa bile dahili
+                        // BluetoothSocket kaynakları tutabilir, close() ile serbest bırak
+                        try { connection.close(); } catch (Exception ignored) {}
+                        connection = null;
+                        lastException = e;
+                        if (attempt < maxRetries) {
+                            logD("🔄 Connection attempt " + (attempt + 1) + " failed, retrying in 2s... (" + e.getMessage() + ")");
+                            sendPrintProgress(PRINT_STATE_CONNECTING, 10, "Yazıcı meşgul, tekrar deneniyor... (" + (attempt + 1) + "/" + maxRetries + ")", macAddress);
+                            try {
+                                Thread.sleep(2000);
+                            } catch (InterruptedException ie) {
+                                Thread.currentThread().interrupt();
+                                throw e;
+                            }
+                        }
                     }
+                }
+                
+                if (lastException != null) {
+                    long attemptDuration = System.currentTimeMillis() - stepStart;
+                    logE("⏱️ [+" + attemptDuration + "ms] ❌ Connection failed after " + (maxRetries + 1) + " attempts: " + lastException.getMessage());
                     
-                    sendPrintError(userMessage, macAddress);
-                    throw new ConnectionException(userMessage, e);
+                    errorAlreadySent = true;
+                    if (lastException.getMessage().contains("timeout") || lastException.getMessage().contains("timed out")) {
+                        sendPrintError("Could not connect to printer: timeout", macAddress);
+                    } else {
+                        sendPrintError("Could not connect to printer", macAddress);
+                    }
+                    throw lastException;
                 }
             }
             
-            // 📊 Progress: CONNECTED (20%)
-            sendPrintProgress(PRINT_STATE_CONNECTING, 20, "Bağlantı kuruldu", macAddress);
+            sendPrintProgress(PRINT_STATE_CONNECTING, 20, "", macAddress);
 
-            // Veri Gönderme: ZPL verisini yazar (UTF-8 kodlaması ile)
             stepStart = System.currentTimeMillis();
             logD("⏱️ Sending ZPL data (" + zplData.length() + " bytes)...");
             
-            // ✅ Connection state kontrolü (güvenlik için)
             if (connection == null || !connection.isConnected()) {
-                sendPrintError("Bağlantı açık değil", macAddress);
+                errorAlreadySent = true;
+                sendPrintError("Could not connect to printer", macAddress);
                 throw new ConnectionException("Connection is not open or not connected");
             }
             
-            // 📊 Progress: SENDING (30%)
-            sendPrintProgress(PRINT_STATE_SENDING, 30, "Veri gönderiliyor...", macAddress);
+            sendPrintProgress(PRINT_STATE_SENDING, 30, "", macAddress);
             
             // ✅ connection.write() blocking call - ZPL tamamen gönderilene kadar bekler
             // Zebra SDK asenkron printing'i halleder, ekstra sleep gereksiz!
             try {
                 connection.write(zplData.getBytes("UTF-8"));
             } catch (ConnectionException e) {
-                // Broken pipe veya connection lost durumunda
                 logE("❌ Write failed: " + e.getMessage());
-                sendPrintError("Veri gönderme hatası: " + e.getMessage(), macAddress);
+                errorAlreadySent = true;
+                sendPrintError("Could not connect to printer", macAddress);
                 throw new ConnectionException("Failed to send ZPL data: " + e.getMessage(), e);
             }
             
             long writeDuration = System.currentTimeMillis() - stepStart;
             logD("⏱️ [+" + writeDuration + "ms] ✅ ZPL data sent successfully");
             
-            // 📊 Progress: PRINTING (50%)
-            sendPrintProgress(PRINT_STATE_PRINTING, 50, "Yazdırılıyor...", macAddress);
+            sendPrintProgress(PRINT_STATE_PRINTING, 50, "", macAddress);
             
-            // 🔄 PRINT STATUS POLLING: Zebra SDK ile yazıcı durumunu izle
             try {
                 printer = ZebraPrinterFactory.getInstance(connection);
                 PrinterStatus status = printer.getCurrentStatus();
                 
                 int pollCount = 0;
-                int maxPolls = 15; // Max 3 saniye bekle (15 x 200ms)
+                int maxPolls = 15;
                 
-                // Yazıcı yazdırırken veya format işlerken bekle
                 while ((status.isPartialFormatInProgress || !status.isReadyToPrint) && pollCount < maxPolls) {
                     pollCount++;
-                    int progress = 50 + (pollCount * 40 / maxPolls); // 50% -> 90%
+                    int progress = 50 + (pollCount * 40 / maxPolls);
                     
-                    // 🎯 Status durumuna göre mesaj belirle
-                    String statusMessage;
-                    if (status.isPartialFormatInProgress) {
-                        statusMessage = "Etiket yazdırılıyor...";
-                    } else if (status.isPaused) {
-                        statusMessage = "Yazıcı duraklatıldı";
-                    } else if (status.isPaperOut) {
-                        statusMessage = "Kağıt bitti!";
-                    } else if (status.isHeadOpen) {
-                        statusMessage = "Yazıcı kafası açık!";
-                    } else if (status.isHeadCold) {
-                        statusMessage = "Yazıcı kafası ısınıyor...";
-                    } else if (status.isHeadTooHot) {
-                        statusMessage = "Yazıcı kafası soğuyor...";
-                    } else if (status.isRibbonOut) {
-                        statusMessage = "Ribon bitti!";
-                    } else {
-                        statusMessage = "İşleniyor...";
-                    }
+                    sendPrintProgressWithStatus(PRINT_STATE_PRINTING, progress, "", macAddress, status);
                     
-                    // 🎯 Send progress WITH full PrinterStatus
-                    sendPrintProgressWithStatus(PRINT_STATE_PRINTING, progress, statusMessage, macAddress, status);
-                    
-                    // ✅ ZEBRA SDK BEST PRACTICE: Status polling interval 200ms
                     try {
                         Thread.sleep(200);
                     } catch (InterruptedException ie) {
@@ -993,33 +1023,40 @@ public class PrinterManager {
                     status = printer.getCurrentStatus();
                 }
                 
-                // 🎯 Son durum kontrolü - tüm kritik hatalar
                 if (status.isPaperOut) {
-                    sendPrintProgressWithStatus(PRINT_STATE_ERROR, 0, "Kağıt bitti!", macAddress, status);
+                    errorAlreadySent = true;
+                    sendPrintError("Paper out", macAddress);
                     throw new ConnectionException("Paper out");
                 }
                 if (status.isHeadOpen) {
-                    sendPrintProgressWithStatus(PRINT_STATE_ERROR, 0, "Yazıcı kafası açık!", macAddress, status);
+                    errorAlreadySent = true;
+                    sendPrintError("Head open", macAddress);
                     throw new ConnectionException("Head open");
                 }
                 if (status.isRibbonOut) {
-                    sendPrintProgressWithStatus(PRINT_STATE_ERROR, 0, "Ribon bitti!", macAddress, status);
+                    errorAlreadySent = true;
+                    sendPrintError("Ribbon out", macAddress);
                     throw new ConnectionException("Ribbon out");
                 }
                 
             } catch (ZebraPrinterLanguageUnknownException e) {
-                logW("Could not get printer status: " + e.getMessage());
+                logW("Could not get printer status (language unknown): " + e.getMessage());
                 // Status alamadık ama print başarılı olmuş olabilir, devam et
+            } catch (Exception e) {
+                // ✅ Tüm status polling hatalarını yakala - etiket muhtemelen basıldı
+                logW("Status polling failed: " + e.getMessage());
+                // Devam et - bağlantı kopmuş olabilir ama yazdırma başarılı olabilir
             }
             
-            // 📊 Progress: VERIFYING (90%)
-            sendPrintProgress(PRINT_STATE_VERIFYING, 90, "Doğrulanıyor...", macAddress);
-            
-            // 📊 Progress: COMPLETED (100%)
-            sendPrintProgress(PRINT_STATE_COMPLETED, 100, "Yazdırma tamamlandı", macAddress);
+            sendPrintProgress(PRINT_STATE_VERIFYING, 90, "", macAddress);
+            sendPrintProgress(PRINT_STATE_COMPLETED, 100, "", macAddress);
             success = true;
 
         } catch (Exception e) {
+            if (!errorAlreadySent) {
+                sendPrintError("Could not connect to printer", macAddress);
+            }
+            
             if (connection != null) {
                 closeCachedConnection(macAddress, connection);
                 connection = null;
@@ -1063,13 +1100,11 @@ public class PrinterManager {
         logD("════════════════════════════════════════════════════════");
         
         if (macAddress == null || macAddress.isEmpty()) {
-            sendPrintError("MAC adresi boş olamaz.", macAddress);
-            throw new IllegalArgumentException("MAC adresi boş olamaz.");
+            throw new IllegalArgumentException("MAC address cannot be empty");
         }
         
         if (zplList == null || zplList.isEmpty()) {
-            sendPrintError("ZPL listesi boş olamaz.", macAddress);
-            throw new IllegalArgumentException("ZPL listesi boş olamaz.");
+            throw new IllegalArgumentException("ZPL list cannot be empty");
         }
         
         // 📊 Batch Progress: CONNECTING (5%)
@@ -1077,6 +1112,7 @@ public class PrinterManager {
         
         Connection connection = null;
         boolean batchSuccess = false;
+        boolean errorAlreadySent = false;
         
         try {
             connection = getCachedConnection(macAddress);
@@ -1085,32 +1121,51 @@ public class PrinterManager {
                 stepStart = System.currentTimeMillis();
                 logD("⏱️ Opening connection to: " + macAddress + " (batch mode)");
                 
-                try {
-                    connection = new BluetoothConnection(macAddress);
-                    connection.open();
-                    
-                    long openDuration = System.currentTimeMillis() - stepStart;
-                    logD("⏱️ [+" + openDuration + "ms] ✅ Connection opened successfully (batch mode)");
-                    
-                } catch (ConnectionException e) {
-                    long attemptDuration = System.currentTimeMillis() - stepStart;
-                    logE("⏱️ [+" + attemptDuration + "ms] ❌ Connection failed: " + e.getMessage());
-                    
-                    String userMessage;
-                    if (e.getMessage().contains("timeout") || e.getMessage().contains("timed out")) {
-                        userMessage = "Yazıcıya ulaşılamıyor. Yazıcının açık ve yakında olduğundan emin olun.";
-                    } else if (e.getMessage().contains("refused") || e.getMessage().contains("failed")) {
-                        userMessage = "Yazıcı bağlantısı reddedildi. Yazıcının açık olduğundan emin olun.";
-                    } else {
-                        userMessage = "Bağlantı hatası: " + e.getMessage();
+                int maxRetries = 3;
+                ConnectionException lastException = null;
+                
+                for (int attempt = 0; attempt <= maxRetries; attempt++) {
+                    try {
+                        connection = new BluetoothConnection(macAddress);
+                        connection.open();
+                        
+                        long openDuration = System.currentTimeMillis() - stepStart;
+                        logD("⏱️ [+" + openDuration + "ms] ✅ Connection opened successfully (batch mode)" + (attempt > 0 ? " (retry #" + attempt + ")" : ""));
+                        lastException = null;
+                        break;
+                    } catch (ConnectionException e) {
+                        // Zebra SDK best practice: open() başarısız olsa bile dahili
+                        // BluetoothSocket kaynakları tutabilir, close() ile serbest bırak
+                        try { connection.close(); } catch (Exception ignored) {}
+                        connection = null;
+                        lastException = e;
+                        if (attempt < maxRetries) {
+                            logD("🔄 Connection attempt " + (attempt + 1) + " failed, retrying in 2s... (" + e.getMessage() + ")");
+                            sendBatchPrintProgress(PRINT_STATE_CONNECTING, 5, 0, totalLabels, macAddress);
+                            try {
+                                Thread.sleep(2000);
+                            } catch (InterruptedException ie) {
+                                Thread.currentThread().interrupt();
+                                throw e;
+                            }
+                        }
                     }
+                }
+                
+                if (lastException != null) {
+                    long attemptDuration = System.currentTimeMillis() - stepStart;
+                    logE("⏱️ [+" + attemptDuration + "ms] ❌ Connection failed after " + (maxRetries + 1) + " attempts (batch mode): " + lastException.getMessage());
                     
-                    sendPrintError(userMessage, macAddress);
-                    throw new ConnectionException(userMessage, e);
+                    errorAlreadySent = true;
+                    if (lastException.getMessage().contains("timeout") || lastException.getMessage().contains("timed out")) {
+                        sendPrintError("Could not connect to printer: timeout", macAddress);
+                    } else {
+                        sendPrintError("Could not connect to printer", macAddress);
+                    }
+                    throw lastException;
                 }
             }
             
-            // 📊 Batch Progress: CONNECTED (10%)
             sendBatchPrintProgress(PRINT_STATE_CONNECTING, 10, 0, totalLabels, macAddress);
             
             // ⚡ BATCH PRINTING: Tüm ZPL'leri tek connection'da gönder
@@ -1137,7 +1192,8 @@ public class PrinterManager {
                 
                 // Connection state kontrolü
                 if (connection == null || !connection.isConnected()) {
-                    sendPrintError("Bağlantı koptu: Etiket #" + currentLabel, macAddress);
+                    errorAlreadySent = true;
+                    sendPrintError("Could not connect to printer", macAddress);
                     throw new ConnectionException("Connection lost during batch printing at label #" + currentLabel);
                 }
                 
@@ -1163,15 +1219,18 @@ public class PrinterManager {
                         
                         // 🚨 Kritik hata kontrolü
                         if (status.isPaperOut) {
-                            sendPrintError("Kağıt bitti! (Etiket #" + currentLabel + ")", macAddress);
+                            errorAlreadySent = true;
+                            sendPrintError("Paper out", macAddress);
                             throw new ConnectionException("Paper out at label #" + currentLabel);
                         }
                         if (status.isHeadOpen) {
-                            sendPrintError("Yazıcı kafası açık! (Etiket #" + currentLabel + ")", macAddress);
+                            errorAlreadySent = true;
+                            sendPrintError("Head open", macAddress);
                             throw new ConnectionException("Head open at label #" + currentLabel);
                         }
                         if (status.isRibbonOut) {
-                            sendPrintError("Ribon bitti! (Etiket #" + currentLabel + ")", macAddress);
+                            errorAlreadySent = true;
+                            sendPrintError("Ribbon out", macAddress);
                             throw new ConnectionException("Ribbon out at label #" + currentLabel);
                         }
                         
@@ -1194,7 +1253,6 @@ public class PrinterManager {
                     
                 } catch (ConnectionException e) {
                     logE("❌ Write failed for label #" + currentLabel + ": " + e.getMessage());
-                    sendPrintError("Etiket #" + currentLabel + " gönderilemedi: " + e.getMessage(), macAddress);
                     throw new ConnectionException("Failed to send label #" + currentLabel + ": " + e.getMessage(), e);
                 }
             }
@@ -1202,22 +1260,19 @@ public class PrinterManager {
             long batchWriteDuration = System.currentTimeMillis() - stepStart;
             logD("⏱️ [+" + batchWriteDuration + "ms] ✅ All " + totalLabels + " labels sent successfully (total: " + totalBytes + " bytes)");
             
-            // 🎯 Son durum kontrolü - tüm etiketler yazdırılana kadar bekle
+            // 🎯 Son durum kontrolü - yazıcı fiziksel yazdırmayı bitirene kadar bekle
             try {
                 ZebraPrinter printer = ZebraPrinterFactory.getInstance(connection);
                 PrinterStatus status = printer.getCurrentStatus();
                 
                 int waitCount = 0;
                 int maxWait = 25; // Max 5 saniye bekle (25 x 200ms)
-                while ((status.isPartialFormatInProgress || status.labelsRemainingInBatch > 0) && waitCount < maxWait) {
-                    int remaining = status.labelsRemainingInBatch;
-                    int printed = totalLabels - remaining;
-                    int progress = 95 + (5 * printed / Math.max(1, totalLabels));
+                while (status.isPartialFormatInProgress && waitCount < maxWait) {
+                    int progress = 95 + (5 * Math.min(waitCount, maxWait) / maxWait);
                     
-                    sendBatchPrintProgressWithStatus(PRINT_STATE_VERIFYING, progress, printed, totalLabels, macAddress, status);
-                    logD("📊 Waiting for print completion: " + remaining + " labels remaining");
+                    sendBatchPrintProgressWithStatus(PRINT_STATE_VERIFYING, progress, totalLabels, totalLabels, macAddress, status);
+                    logD("📊 Waiting for printer to finish physical printing, poll #" + waitCount);
                     
-                    // ✅ ZEBRA SDK BEST PRACTICE: Status polling interval 200ms
                     Thread.sleep(200);
                     status = printer.getCurrentStatus();
                     waitCount++;
@@ -1234,6 +1289,10 @@ public class PrinterManager {
             batchSuccess = true;
             
         } catch (Exception e) {
+            if (!errorAlreadySent) {
+                sendPrintError("Could not connect to printer", macAddress);
+            }
+            
             if (connection != null) {
                 closeCachedConnection(macAddress, connection);
                 connection = null;
@@ -1293,14 +1352,14 @@ public class PrinterManager {
             logD("Firmware: " + firmware);
             
             info.append("Model: ").append(model).append("\n");
-            info.append("Seri No: ").append(serialNumber).append("\n");
+            info.append("Serial: ").append(serialNumber).append("\n");
             info.append("Firmware: ").append(firmware).append("\n");
             
             logD("Getting printer control language...");
             // Yazıcı dili bilgisini al
             PrinterLanguage language = printer.getPrinterControlLanguage();
             logD("Language: " + language.toString());
-            info.append("Dil: ").append(language.toString()).append("\n");
+            info.append("Language: ").append(language.toString()).append("\n");
             
             logD("Printer info collected successfully: " + info.toString().trim());
             return info.toString();
@@ -1424,21 +1483,21 @@ public class PrinterManager {
         } catch (ZebraPrinterLanguageUnknownException e) {
             logE("❌ Printer language unknown: " + e.getMessage());
             statusMap.put("isConnected", true); // Bağlandı ama dil algılanamadı
-            statusMap.put("error", "Yazıcı dili algılanamadı: " + e.getMessage());
+            statusMap.put("error", "Printer language unknown: " + e.getMessage());
             statusMap.put("canPrint", false);
             return statusMap;
             
         } catch (ConnectionException e) {
             logE("❌ Connection error: " + e.getMessage());
             statusMap.put("isConnected", false);
-            statusMap.put("error", "Bağlantı hatası: " + e.getMessage());
+            statusMap.put("error", "Connection error: " + e.getMessage());
             statusMap.put("canPrint", false);
             return statusMap;
             
         } catch (Exception e) {
             logE("❌ Unexpected error: " + e.getMessage());
             statusMap.put("isConnected", false);
-            statusMap.put("error", "Beklenmeyen hata: " + e.getMessage());
+            statusMap.put("error", "Unexpected error: " + e.getMessage());
             statusMap.put("canPrint", false);
             return statusMap;
             
@@ -1533,30 +1592,370 @@ public class PrinterManager {
      * PrinterStatus'tan kullanıcı dostu mesaj döndürür
      */
     private String getStatusMessage(PrinterStatus status) {
-        if (status.isPaperOut) return "🔴 Kağıt bitti!";
-        if (status.isHeadOpen) return "🔴 Yazıcı kafası açık!";
-        if (status.isRibbonOut) return "🔴 Ribon bitti!";
-        if (status.isHeadCold) return "🟡 Yazıcı kafası ısınıyor...";
-        if (status.isHeadTooHot) return "🟡 Yazıcı kafası soğuyor...";
-        if (status.isReceiveBufferFull) return "🟡 Yazıcı meşgul, sıra bekleniyor...";
-        if (status.isPartialFormatInProgress) return "🔵 Yazdırılıyor...";
-        if (status.isPaused) return "🟡 Yazıcı duraklatıldı";
-        if (status.labelsRemainingInBatch > 0) return "🔵 " + status.labelsRemainingInBatch + " etiket kaldı";
-        if (status.isReadyToPrint) return "🟢 Yazıcı hazır";
-        return "⚪ Durum bilinmiyor";
+        if (status.isPaperOut) return "PAPER_OUT";
+        if (status.isHeadOpen) return "HEAD_OPEN";
+        if (status.isRibbonOut) return "RIBBON_OUT";
+        if (status.isHeadCold) return "HEAD_COLD";
+        if (status.isHeadTooHot) return "HEAD_HOT";
+        if (status.isReceiveBufferFull) return "BUFFER_FULL";
+        if (status.isPartialFormatInProgress) return "PRINTING";
+        if (status.isPaused) return "PAUSED";
+        if (status.labelsRemainingInBatch > 0) return "LABELS_REMAINING:" + status.labelsRemainingInBatch;
+        if (status.isReadyToPrint) return "READY";
+        return "UNKNOWN";
     }
 
     /**
      * Kaynakları temizler
+     * ✅ Best practice: awaitTermination ile graceful shutdown
      */
     public void dispose() {
         logD("🧹 Disposing PrinterManager, closing all connections...");
         closeActiveConnection();
         isDiscovering = false;
         
-        // ExecutorService'i kapat
+        // ✅ ExecutorService graceful shutdown
         executorService.shutdown();
+        try {
+            // Aktif görevlerin tamamlanması için 5 saniye bekle
+            if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
+                logW("⚠️ ExecutorService did not terminate in time, forcing shutdown...");
+                executorService.shutdownNow();
+                
+                // Force shutdown sonrası 2 saniye daha bekle
+                if (!executorService.awaitTermination(2, TimeUnit.SECONDS)) {
+                    logE("❌ ExecutorService could not be terminated");
+                }
+            }
+        } catch (InterruptedException e) {
+            logW("⚠️ Shutdown interrupted, forcing shutdown...");
+            executorService.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
         
         logD("✅ PrinterManager disposed successfully");
+    }
+    
+    // ==================== FONT UPLOAD ====================
+    
+    /**
+     * Uploads a font to the zebra printer using Link-OS SDK FontUtil
+     * 
+     * @param macAddress MAC address of the printer
+     * @param assetPath Path to the asset font file  
+     * @param fontType Type of font (arial, helvetica, etc.)
+     * @return true if upload successful, false otherwise
+     * @throws Exception if upload fails
+     */
+    private boolean uploadFontToprinter(String macAddress, String assetPath, String fontType) throws Exception {
+        logD("📁 Starting font upload: " + assetPath + " to " + macAddress + " as " + fontType);
+        
+        Connection connection = null;
+        InputStream fontStream = null;
+        byte[] fontData = null;
+        
+        try {
+            // Get bluetooth connection using existing method
+            connection = getCachedConnection(macAddress);
+            if (connection == null) {
+                // Create new connection if not cached
+                connection = new BluetoothConnection(macAddress);
+                connection.open();
+                logD("📶 Created new connection for font upload: " + macAddress);
+            } else {
+                logD("♻️ Using cached connection for font upload: " + macAddress);
+            }
+            
+            // Read font data from assets - remove "assets/" prefix for Android
+            String androidAssetPath = assetPath;
+            if (androidAssetPath.startsWith("assets/")) {
+                androidAssetPath = androidAssetPath.substring(7); // Remove "assets/" prefix
+            }
+            logD("📂 Reading asset: " + androidAssetPath);
+            
+            try {
+                fontStream = context.getAssets().open(androidAssetPath);
+                fontData = readAllBytes(fontStream);
+                logD("📄 Font data size: " + fontData.length + " bytes");
+                
+                if (fontData.length == 0) {
+                    throw new Exception("Font file is empty: " + androidAssetPath);
+                }
+            } catch (IOException e) {
+                logE("❌ Failed to read asset: " + androidAssetPath + " - " + e.getMessage());
+                
+                // List available assets for debugging
+                try {
+                    String[] assetList = context.getAssets().list("arial");
+                    logD("Available assets in arial/: " + java.util.Arrays.toString(assetList));
+                } catch (IOException listEx) {
+                    logE("Failed to list assets: " + listEx.getMessage());
+                }
+                
+                throw new Exception("Could not read font file: " + androidAssetPath + " - " + e.getMessage());
+            }
+            
+            // Analyze font format
+            FontDataType dataType = analyzeFontData(fontData);
+            logD("🔍 Detected font format: " + dataType);
+            
+            // Generate printer path: E:FONTNAME (flash storage)
+            String printerPath = "E:" + fontType.toUpperCase();
+            logD("📍 Target printer path: " + printerPath);
+            
+            // Process based on format
+            boolean success = processFontByType(connection, fontData, dataType, printerPath);
+            
+            if (success) {
+                logD("✅ Font upload completed successfully");
+            } else {
+                logE("❌ Font upload failed");
+            }
+            
+            return success;
+            
+        } catch (Exception e) {
+            logE("❌ Font upload error: " + e.getMessage());
+            throw new Exception("Font upload failed: " + e.getMessage(), e);
+        } finally {
+            // Clean up resources
+            if (fontStream != null) {
+                try { fontStream.close(); } catch (IOException ignored) {}
+            }
+            if (connection != null) {
+                try { connection.close(); } catch (ConnectionException ignored) {}
+            }
+        }
+    }
+    
+    /**
+     * Font data type enumeration
+     */
+    private enum FontDataType {
+        TTF_IN_ZPL,     // ~DY command with embedded TTF
+        PURE_TTF,       // Direct TTF binary data
+        ZPL_COMMANDS    // Raw ZPL font commands
+    }
+    
+    /**
+     * Analyzes font data to determine its type
+     * 
+     * @param data Font file bytes
+     * @return FontDataType indicating the format
+     */
+    private FontDataType analyzeFontData(byte[] data) {
+        if (data.length < 10) {
+            return FontDataType.ZPL_COMMANDS;
+        }
+        
+        // Check for ZPL command header (~DY or ~DU)
+        String header = new String(data, 0, Math.min(50, data.length));
+        if (header.contains("~DY") || header.contains("~DU")) {
+            logD("🏷️ Found ZPL font command (~DY/~DU)");
+            return FontDataType.TTF_IN_ZPL;
+        }
+        
+        // Check for TTF magic number (0x00010000)
+        if (data.length >= 4 && 
+            data[0] == 0x00 && data[1] == 0x01 && 
+            data[2] == 0x00 && data[3] == 0x00) {
+            logD("🎯 Found TTF magic number");
+            return FontDataType.PURE_TTF;
+        }
+        
+        // Default to ZPL commands
+        return FontDataType.ZPL_COMMANDS;
+    }
+    
+    /**
+     * Processes font upload based on detected format
+     * 
+     * @param connection Printer connection
+     * @param fontData Raw font bytes
+     * @param dataType Detected font format
+     * @param printerPath Target path on printer
+     * @return true if successful
+     */
+    private boolean processFontByType(Connection connection, byte[] fontData, FontDataType dataType, String printerPath) throws Exception {
+        
+        switch (dataType) {
+            case TTF_IN_ZPL:
+                // Extract TTF from ZPL command and use FontUtil
+                logD("🔧 Processing TTF-in-ZPL format");
+                byte[] ttfData = extractTtfFromZplCommand(fontData);
+                return uploadTtfWithFontUtil(connection, ttfData, printerPath);
+                
+            case PURE_TTF:
+                // Direct TTF - use FontUtil
+                logD("🔧 Processing pure TTF format");
+                return uploadTtfWithFontUtil(connection, fontData, printerPath);
+                
+            case ZPL_COMMANDS:
+                // Raw ZPL - use connection.write
+                logD("🔧 Processing raw ZPL commands");
+                connection.write(fontData);
+                return true;
+                
+            default:
+                throw new Exception("Unsupported font format: " + dataType);
+        }
+    }
+    
+    /**
+     * Uploads TTF font using Zebra Link-OS FontUtil API
+     * 
+     * @param connection Printer connection
+     * @param ttfData TTF binary data
+     * @param printerPath Target path on printer (E:ARIAL)
+     * @return true if successful
+     */
+    private boolean uploadTtfWithFontUtil(Connection connection, byte[] ttfData, String printerPath) throws Exception {
+        try {
+            // Create Link-OS printer instance
+            ZebraPrinter genericPrinter = ZebraPrinterFactory.getInstance(connection);
+            ZebraPrinterLinkOs linkOsPrinter = ZebraPrinterFactory.createLinkOsPrinter(genericPrinter);
+            
+            if (linkOsPrinter == null) {
+                throw new Exception("Failed to create Link-OS printer instance");
+            }
+            
+            // Upload TTF using FontUtil API
+            logD("🚀 Uploading TTF via Link-OS FontUtil to: " + printerPath);
+            InputStream ttfStream = new ByteArrayInputStream(ttfData);
+            linkOsPrinter.downloadTtfFont(ttfStream, printerPath);
+            
+            logD("✅ FontUtil upload completed");
+            return true;
+            
+        } catch (Exception e) {
+            logE("❌ FontUtil upload failed: " + e.getMessage());
+            throw e;
+        }
+    }
+    
+    /**
+     * Extracts TTF binary data from ZPL ~DY command
+     * Format: ~DYE:fontname,b,T,size,,<TTF_BINARY_DATA>
+     * 
+     * @param zplData Complete ZPL command with embedded TTF
+     * @return TTF binary data
+     */
+    private byte[] extractTtfFromZplCommand(byte[] zplData) throws Exception {
+        // Find the position after the second comma (after size parameter)
+        // Format: ~DYE:arial,b,T,915212,,<TTF_DATA>
+        
+        String header = new String(zplData, 0, Math.min(100, zplData.length));
+        logD("🔍 ZPL header: " + header.substring(0, Math.min(50, header.length())));
+        
+        // Find the start of TTF data (after ",,")
+        int ttfStart = -1;
+        for (int i = 0; i < zplData.length - 1; i++) {
+            if (zplData[i] == ',' && zplData[i + 1] == ',') {
+                ttfStart = i + 2;
+                break;
+            }
+        }
+        
+        if (ttfStart == -1) {
+            throw new Exception("Could not find TTF data start in ZPL command");
+        }
+        
+        logD("📍 TTF data starts at byte: " + ttfStart);
+        
+        // Extract TTF portion
+        byte[] ttfData = new byte[zplData.length - ttfStart];
+        System.arraycopy(zplData, ttfStart, ttfData, 0, ttfData.length);
+        
+        logD("📦 Extracted TTF size: " + ttfData.length + " bytes");
+        
+        // Validate TTF magic number
+        if (ttfData.length >= 4 && 
+            ttfData[0] == 0x00 && ttfData[1] == 0x01 && 
+            ttfData[2] == 0x00 && ttfData[3] == 0x00) {
+            logD("✅ TTF magic number validated");
+            return ttfData;
+        } else {
+            throw new Exception("Invalid TTF data - magic number not found");
+        }
+    }
+    
+    /**
+     * Reads all bytes from InputStream
+     * 
+     * @param inputStream Input stream to read from
+     * @return All bytes as array
+     */
+    private byte[] readAllBytes(InputStream inputStream) throws IOException {
+        byte[] buffer = new byte[8192];
+        int bytesRead;
+        java.io.ByteArrayOutputStream outputStream = new java.io.ByteArrayOutputStream();
+        
+        while ((bytesRead = inputStream.read(buffer)) != -1) {
+            outputStream.write(buffer, 0, bytesRead);
+        }
+        
+        return outputStream.toByteArray();
+    }
+    
+    /**
+     * Uploads font data directly from byte array (from main app)
+     * 
+     * @param macAddress MAC address of the printer
+     * @param fontData Font file bytes from main app
+     * @param fontType Type of font (arial, helvetica, etc.)
+     * @return true if upload successful, false otherwise
+     * @throws Exception if upload fails
+     */
+    private boolean uploadFontDataToPrinter(String macAddress, byte[] fontData, String fontType) throws Exception {
+        logD("📁 Starting font data upload: " + fontData.length + " bytes to " + macAddress + " as " + fontType);
+        
+        Connection connection = null;
+        
+        try {
+            // Get bluetooth connection using existing method
+            connection = getCachedConnection(macAddress);
+            if (connection == null) {
+                // Create new connection if not cached
+                connection = new BluetoothConnection(macAddress);
+                connection.open();
+                logD("📶 Created new connection for font data upload: " + macAddress);
+            } else {
+                logD("♻️ Using cached connection for font data upload: " + macAddress);
+            }
+            
+            logD("📄 Font data size: " + fontData.length + " bytes");
+            
+            if (fontData.length == 0) {
+                throw new Exception("Font data is empty");
+            }
+            
+            // Analyze font format
+            FontDataType dataType = analyzeFontData(fontData);
+            logD("🔍 Detected font format: " + dataType);
+            
+            // Generate printer path: E:FONTNAME (flash storage)
+            String printerPath = "E:" + fontType.toUpperCase();
+            logD("📍 Target printer path: " + printerPath);
+            
+            // Process based on format
+            boolean success = processFontByType(connection, fontData, dataType, printerPath);
+            
+            if (success) {
+                logD("✅ Font data upload completed successfully");
+            } else {
+                logE("❌ Font data upload failed");
+            }
+            
+            return success;
+            
+        } catch (Exception e) {
+            logE("❌ Font data upload error: " + e.getMessage());
+            throw new Exception("Font data upload failed: " + e.getMessage(), e);
+        } finally {
+            // Clean up resources
+            if (connection != null) {
+                try { connection.close(); } catch (ConnectionException ignored) {}
+            }
+        }
     }
 }

@@ -26,6 +26,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
@@ -529,8 +530,11 @@ public class BluetoothManager {
 
     /**
      * Kaynakları temizler
+     * ✅ Best practice: Tüm receiver'ları temizle ve graceful shutdown
      */
     public void dispose() {
+        Log.d(TAG, "🧹 Disposing BluetoothManager...");
+        
         // Aktif tarama varsa durdur
         stopDiscovery(null);
         
@@ -539,17 +543,41 @@ public class BluetoothManager {
             disconnect(null);
         }
         
-        // BroadcastReceiver'ları kaldır
+        // ✅ Discovery receiver'ı temizle
+        if (discoveryReceiver != null) {
+            try {
+                context.unregisterReceiver(discoveryReceiver);
+                discoveryReceiver = null;
+                Log.d(TAG, "✅ Discovery receiver unregistered");
+            } catch (Exception e) {
+                Log.w(TAG, "Discovery receiver unregister error (may already be unregistered): " + e.getMessage());
+            }
+        }
+        
+        // ✅ Connection receiver'ı temizle
         if (connectionReceiver != null) {
             try {
                 context.unregisterReceiver(connectionReceiver);
                 connectionReceiver = null;
+                Log.d(TAG, "✅ Connection receiver unregistered");
             } catch (Exception e) {
-                Log.e(TAG, "Connection receiver unregister error: " + e.getMessage());
+                Log.w(TAG, "Connection receiver unregister error: " + e.getMessage());
             }
         }
         
-        // Thread havuzunu kapat
+        // ✅ ExecutorService graceful shutdown
         executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(3, TimeUnit.SECONDS)) {
+                Log.w(TAG, "⚠️ ExecutorService did not terminate in time, forcing shutdown...");
+                executorService.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            Log.w(TAG, "⚠️ Shutdown interrupted, forcing shutdown...");
+            executorService.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+        
+        Log.d(TAG, "✅ BluetoothManager disposed successfully");
     }
 }

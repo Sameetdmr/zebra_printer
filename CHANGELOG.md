@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.0 - Font Upload & Lifecycle Management 🎨
+
+- **New Features**
+  - **`uploadFont()` & `uploadFontData()`**: Upload custom fonts to Zebra printers from assets or raw byte data. Supports TTF, ZPL-wrapped TTF (~DY), and raw ZPL font commands via Zebra Link-OS `FontUtil` API.
+  - **`reinitialize()`**: Re-enable `PrinterManager` and `BluetoothManager` after `dispose()` without creating a new instance.
+  - **Disposed-state guards**: Both managers now throw `StateError` when used after disposal.
+
+- **Stability Improvements**
+  - Graceful `ExecutorService` shutdown in native Android layer (3–5s timeout with forced shutdown fallback).
+  - Background connection closing to prevent UI blocking during cleanup.
+  - Improved Bluetooth `dispose()`: unregisters both discovery and connection receivers.
+  - Post-print status polling errors are handled gracefully (print may succeed even if connection drops).
+  - Connection idle timeout reduced from 5s to 2s for faster resource release.
+  - `open()` failure cleanup follows Zebra SDK best practices (always call `close()` to release Bluetooth socket resources).
+
+- **Developer Experience**
+  - Progress and error messages standardized to English.
+  - Batch print progress message format simplified to `current/total`.
+
 ## 0.3.3 - Descriptive Timeout & Export Optimization 🚀
 
 - Updated timeout error message in `PrinterManager` to be more descriptive and localized.

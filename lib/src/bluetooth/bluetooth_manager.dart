@@ -57,16 +57,24 @@ class BluetoothManager {
   final ZebraConfig _config = ZebraConfig();
 
   /// Stream controller triggered when discovery finishes
-  final StreamController<void> _discoveryFinishedController = StreamController.broadcast();
+  late StreamController<void> _discoveryFinishedController;
 
   /// Stream controller triggered when device is found
-  final StreamController<BluetoothDevice> _deviceFoundController = StreamController.broadcast();
+  late StreamController<BluetoothDevice> _deviceFoundController;
 
   /// Stream controller triggered when connection state changes
-  final StreamController<BluetoothConnectionState> _connectionStateController = StreamController.broadcast();
+  late StreamController<BluetoothConnectionState> _connectionStateController;
 
   /// Stream controller triggered when scan state changes
-  final StreamController<BluetoothScanState> _scanStateController = StreamController.broadcast();
+  late StreamController<BluetoothScanState> _scanStateController;
+
+  /// Initializes stream controllers
+  void _initControllers() {
+    _discoveryFinishedController = StreamController.broadcast();
+    _deviceFoundController = StreamController.broadcast();
+    _connectionStateController = StreamController.broadcast();
+    _scanStateController = StreamController.broadcast();
+  }
 
   /// Scan state
   BluetoothScanState _scanState = BluetoothScanState.idle;
@@ -127,8 +135,9 @@ class BluetoothManager {
   /// Stream triggered when scan state changes
   Stream<BluetoothScanState> get onScanStateChanged => _scanStateController.stream;
 
-  /// Sets up the method channel handler
+  /// Sets up the method channel handler and initializes controllers
   void _init() {
+    _initControllers();
     _channel.setMethodCallHandler(_handleMethodCall);
   }
 
@@ -363,25 +372,35 @@ class BluetoothManager {
     }
   }
 
-  /// Closes the stream controllers
-  void dispose() {
+  /// Closes the stream controllers and cleans up resources
+  Future<void> dispose() async {
     if (_isDisposed) return;
     _config.log('BluetoothManager disposing...');
     
     // Stop active scanning if any
     if (isScanning) {
-      stopDiscovery();
+      await stopDiscovery();
     }
 
     // Disconnect active connection if any
     if (isConnected) {
-      disconnect();
+      await disconnect();
     }
 
     // Remove method call handler
     _channel.setMethodCallHandler(null);
 
-    // Mark as disposed - stream controllers are broadcast so they can stay open
+    // ✅ Close all stream controllers to prevent memory leaks
+    _discoveryFinishedController.close();
+    _deviceFoundController.close();
+    _connectionStateController.close();
+    _scanStateController.close();
+
+    // Clear device lists
+    _devices.clear();
+    _bondedDevices.clear();
+
+    // Mark as disposed
     _isDisposed = true;
     _config.log('BluetoothManager disposed');
   }
@@ -394,6 +413,9 @@ class BluetoothManager {
     if (!_isDisposed) return;
     _config.log('BluetoothManager reinitializing...');
 
+    // ✅ Recreate stream controllers (they were closed in dispose)
+    _initControllers();
+    
     _channel.setMethodCallHandler(_handleMethodCall);
     _scanState = BluetoothScanState.idle;
     _connectionState = BluetoothConnectionState.disconnected;
