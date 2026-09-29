@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  analyze:
+    name: Flutter Analyze & Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.32.x"
+          channel: "stable"
+          cache: true
+
+      - name: Install dependencies (package)
+        working-directory: .
+        run: flutter pub get
+
+      - name: Check formatting
+        working-directory: .
+        run: dart format --output=none --set-exit-if-changed lib/
+
+      - name: Analyze package
+        working-directory: .
+        run: flutter analyze
+
+      - name: Install dependencies (example)
+        working-directory: example
+        run: flutter pub get
+
+      - name: Analyze example
+        working-directory: example
+        run: flutter analyze

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.3 - Improved README & GitHub CI 📚
+
+- Rewrote README with step-by-step getting started guide, real-world code examples, architecture overview, and a full troubleshooting table.
+- Added GitHub Actions CI workflow (`flutter analyze` + format check on push/PR).
+- Added GitHub issue templates (Bug Report, Feature Request) and PR template.
+
 ## 0.4.2 - Internationalization & Bug Fixes 🌍
 
 - **Bug Fix (Critical)**: `PrinterInfo.fromString` was parsing Turkish keys (`Seri No:`, `Dil:`) but Android was sending English keys (`Serial:`, `Language:`). `serialNumber` and `language` were always returning `"Unknown"`. Fixed to match actual Android output.
