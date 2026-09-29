@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.2 - Internationalization & Bug Fixes 🌍
+
+- **Bug Fix (Critical)**: `PrinterInfo.fromString` was parsing Turkish keys (`Seri No:`, `Dil:`) but Android was sending English keys (`Serial:`, `Language:`). `serialNumber` and `language` were always returning `"Unknown"`. Fixed to match actual Android output.
+- **i18n**: All public-facing strings in `ZebraPrinterStatus`, `PrintProgress`, `PrintLockedException`, `safePrint`, and `safeBatchPrint` translated to English.
+  - `statusMessage` / `statusMessagePlain` / `errorMessages` → English
+  - `printerWarning` → English
+  - `userMessage` in `PrintLockedException` → English
+  - Progress messages (`Preparing printer...`, `Print timeout`, etc.) → English
+- **Linter**: Fixed `unnecessary_brace_in_string_interps` in `toCompactString()`.
+
 ## 0.4.1 - README API Overview 📝
 
 - Rewrote README with concise API tables for `PrinterManager` and `BluetoothManager`.

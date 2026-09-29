@@ -69,14 +69,14 @@ class PrinterInfo {
     String languageStr = 'Unknown';
     
     for (var line in lines) {
-      if (line.contains('Model:')) {
-        model = line.split(':').last.trim();
-      } else if (line.contains('Seri No:')) {
-        serialNumber = line.split(':').last.trim();
-      } else if (line.contains('Firmware:')) {
-        firmware = line.split(':').last.trim();
-      } else if (line.contains('Dil:')) {
-        languageStr = line.split(':').last.trim();
+      if (line.startsWith('Model:')) {
+        model = line.substring('Model:'.length).trim();
+      } else if (line.startsWith('Serial:')) {
+        serialNumber = line.substring('Serial:'.length).trim();
+      } else if (line.startsWith('Firmware:')) {
+        firmware = line.substring('Firmware:'.length).trim();
+      } else if (line.startsWith('Language:')) {
+        languageStr = line.substring('Language:'.length).trim();
       }
     }
     

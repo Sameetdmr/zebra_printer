@@ -116,7 +116,7 @@ class ZebraPrinterStatus {
   /// Creates status indicating printer is disconnected
   factory ZebraPrinterStatus.disconnected({String? address}) {
     return ZebraPrinterStatus(
-      errorMessage: 'Yazıcı bağlı değil',
+      errorMessage: 'Printer is not connected',
       address: address,
     );
   }
@@ -174,33 +174,33 @@ class ZebraPrinterStatus {
   /// Returns user-friendly status message with emojis
   String get statusMessage {
     if (errorMessage != null) return errorMessage!;
-    if (isPaperOut) return '🔴 Kağıt bitti!';
-    if (isHeadOpen) return '🔴 Yazıcı kafası açık!';
-    if (isRibbonOut) return '🔴 Ribon bitti!';
-    if (isHeadCold) return '🟡 Yazıcı kafası ısınıyor...';
-    if (isHeadTooHot) return '🟡 Yazıcı kafası soğuyor...';
-    if (isReceiveBufferFull) return '🟡 Yazıcı meşgul, sıra bekleniyor...';
-    if (isPrinting) return '🔵 Yazdırılıyor...';
-    if (isPaused) return '🟡 Yazıcı duraklatıldı';
-    if (labelsRemainingInBatch > 0) return '🔵 $labelsRemainingInBatch etiket kaldı';
-    if (isReadyToPrint) return '🟢 Yazıcı hazır';
-    return '⚪ Durum bilinmiyor';
+    if (isPaperOut) return '🔴 Paper out!';
+    if (isHeadOpen) return '🔴 Print head open!';
+    if (isRibbonOut) return '🔴 Ribbon out!';
+    if (isHeadCold) return '🟡 Print head warming up...';
+    if (isHeadTooHot) return '🟡 Print head cooling down...';
+    if (isReceiveBufferFull) return '🟡 Printer busy, waiting in queue...';
+    if (isPrinting) return '🔵 Printing...';
+    if (isPaused) return '🟡 Printer paused';
+    if (labelsRemainingInBatch > 0) return '🔵 $labelsRemainingInBatch labels remaining';
+    if (isReadyToPrint) return '🟢 Printer ready';
+    return '⚪ Status unknown';
   }
 
   /// Returns user-friendly status message without emojis (for plain text UI)
   String get statusMessagePlain {
     if (errorMessage != null) return errorMessage!;
-    if (isPaperOut) return 'Kağıt bitti!';
-    if (isHeadOpen) return 'Yazıcı kafası açık!';
-    if (isRibbonOut) return 'Ribon bitti!';
-    if (isHeadCold) return 'Yazıcı kafası ısınıyor...';
-    if (isHeadTooHot) return 'Yazıcı kafası soğuyor...';
-    if (isReceiveBufferFull) return 'Yazıcı meşgul, sıra bekleniyor...';
-    if (isPrinting) return 'Yazdırılıyor...';
-    if (isPaused) return 'Yazıcı duraklatıldı';
-    if (labelsRemainingInBatch > 0) return '$labelsRemainingInBatch etiket kaldı';
-    if (isReadyToPrint) return 'Yazıcı hazır';
-    return 'Durum bilinmiyor';
+    if (isPaperOut) return 'Paper out!';
+    if (isHeadOpen) return 'Print head open!';
+    if (isRibbonOut) return 'Ribbon out!';
+    if (isHeadCold) return 'Print head warming up...';
+    if (isHeadTooHot) return 'Print head cooling down...';
+    if (isReceiveBufferFull) return 'Printer busy, waiting in queue...';
+    if (isPrinting) return 'Printing...';
+    if (isPaused) return 'Printer paused';
+    if (labelsRemainingInBatch > 0) return '$labelsRemainingInBatch labels remaining';
+    if (isReadyToPrint) return 'Printer ready';
+    return 'Status unknown';
   }
 
   /// Returns short status code for logging
@@ -220,12 +220,12 @@ class ZebraPrinterStatus {
   /// Returns all current error messages as a list
   List<String> get errorMessages {
     final errors = <String>[];
-    if (isPaperOut) errors.add('Kağıt bitti');
-    if (isHeadOpen) errors.add('Yazıcı kafası açık');
-    if (isRibbonOut) errors.add('Ribon bitti');
-    if (isHeadCold) errors.add('Yazıcı kafası soğuk');
-    if (isHeadTooHot) errors.add('Yazıcı kafası çok sıcak');
-    if (isReceiveBufferFull) errors.add('Buffer dolu');
+    if (isPaperOut) errors.add('Paper out');
+    if (isHeadOpen) errors.add('Print head open');
+    if (isRibbonOut) errors.add('Ribbon out');
+    if (isHeadCold) errors.add('Print head cold');
+    if (isHeadTooHot) errors.add('Print head too hot');
+    if (isReceiveBufferFull) errors.add('Receive buffer full');
     if (errorMessage != null) errors.add(errorMessage!);
     return errors;
   }
@@ -277,6 +277,6 @@ class ZebraPrinterStatus {
 
   /// Returns a compact string for logging
   String toCompactString() {
-    return '[$statusCode] ${canPrint ? "✓" : "✗"} ${isBusy ? "BUSY" : "IDLE"} ${labelsRemainingInBatch > 0 ? "(${labelsRemainingInBatch} left)" : ""}';
+    return '[$statusCode] ${canPrint ? "✓" : "✗"} ${isBusy ? "BUSY" : "IDLE"} ${labelsRemainingInBatch > 0 ? "($labelsRemainingInBatch left)" : ""}';
   }
 }

@@ -23,7 +23,7 @@ Flutter package for **Zebra Link-OS™ Printers**. Uses the official **Zebra SDK
 
 ```yaml
 dependencies:
-  zebra_printer: ^0.4.1
+  zebra_printer: ^0.4.2
 ```
 
 Add to `AndroidManifest.xml`:

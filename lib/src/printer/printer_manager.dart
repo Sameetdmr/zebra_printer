@@ -33,8 +33,8 @@ class PrintLockedException implements Exception {
 
   /// Returns user-friendly error message
   String get userMessage =>
-      'Şu an "$currentPrintingAddress" yazıcısında yazdırma devam ediyor. '
-      'Lütfen işlem bitene kadar bekleyin.';
+      'Printer "$currentPrintingAddress" is currently printing. '
+      'Please wait for the operation to complete.';
 }
 
 /// Enum for print state
@@ -220,11 +220,11 @@ class PrintProgress {
 
   /// Returns printer status warning message (if any)
   String? get printerWarning {
-    if (isPaperOut == true) return 'Kağıt bitti!';
-    if (isHeadOpen == true) return 'Yazıcı kafası açık!';
-    if (isRibbonOut == true) return 'Ribon bitti!';
-    if (isHeadCold == true) return 'Yazıcı kafası ısınıyor...';
-    if (isHeadTooHot == true) return 'Yazıcı kafası soğuyor...';
+    if (isPaperOut == true) return 'Paper out!';
+    if (isHeadOpen == true) return 'Print head open!';
+    if (isRibbonOut == true) return 'Ribbon out!';
+    if (isHeadCold == true) return 'Print head warming up...';
+    if (isHeadTooHot == true) return 'Print head cooling down...';
     return null;
   }
 
@@ -353,8 +353,7 @@ class PrinterManager {
       if (duration > _maxPrintDuration) {
         _config.log('⏱️ Print timeout for $address! Auto-releasing lock after ${duration.inSeconds}s');
         _printerLocks.remove(address);
-        // Callback ile timeout bildir
-        onPrintProgress?.call(PrintProgress(state: PrintState.error, percentage: 0, errorMessage: 'Yazdırma zaman aşımı (${_maxPrintDuration.inSeconds}s)', address: address));
+        onPrintProgress?.call(PrintProgress(state: PrintState.error, percentage: 0, errorMessage: 'Print timeout (${_maxPrintDuration.inSeconds}s)', address: address));
         return;
       }
     }
@@ -645,12 +644,11 @@ class PrinterManager {
     // 🔒 Check if THIS printer is currently printing
     if (isPrinterLocked(macAddress)) {
       final duration = getPrinterLockDuration(macAddress);
-      throw PrintLockedException('Bu yazıcıda yazdırma devam ediyor: $macAddress (${duration?.inSeconds ?? 0}s)', currentPrintingAddress: macAddress, requestedAddress: macAddress);
+      throw PrintLockedException('Print in progress on this printer: $macAddress (${duration?.inSeconds ?? 0}s)', currentPrintingAddress: macAddress, requestedAddress: macAddress);
     }
 
-    // 🚀 Hemen "preparing" progress gönder - dialog anında açılsın
-    // Native taraftan connecting gelmeden önce kullanıcıya feedback ver
-    onPrintProgress?.call(PrintProgress(state: PrintState.connecting, percentage: 5, message: 'Yazıcı hazırlanıyor...', address: macAddress));
+    // 🚀 Send immediate "preparing" progress before native "connecting" arrives
+    onPrintProgress?.call(PrintProgress(state: PrintState.connecting, percentage: 5, message: 'Preparing printer...', address: macAddress));
 
     // Actual print - lock is managed by progress callback
     return _sendZplToPrinter(macAddress, zplData);
@@ -672,11 +670,11 @@ class PrinterManager {
     // 🔒 Check if THIS printer is currently printing
     if (isPrinterLocked(macAddress)) {
       final duration = getPrinterLockDuration(macAddress);
-      throw PrintLockedException('Bu yazıcıda yazdırma devam ediyor: $macAddress (${duration?.inSeconds ?? 0}s)', currentPrintingAddress: macAddress, requestedAddress: macAddress);
+      throw PrintLockedException('Print in progress on this printer: $macAddress (${duration?.inSeconds ?? 0}s)', currentPrintingAddress: macAddress, requestedAddress: macAddress);
     }
 
-    // 🚀 Hemen "preparing" progress gönder - dialog anında açılsın
-    onPrintProgress?.call(PrintProgress(state: PrintState.connecting, percentage: 5, message: 'Yazıcı hazırlanıyor...', address: macAddress, isBatch: true, currentLabel: 0, totalLabels: zplList.length));
+    // 🚀 Send immediate "preparing" progress before native "connecting" arrives
+    onPrintProgress?.call(PrintProgress(state: PrintState.connecting, percentage: 5, message: 'Preparing printer...', address: macAddress, isBatch: true, currentLabel: 0, totalLabels: zplList.length));
 
     // Actual batch print - lock is managed by progress callback
     return _sendMultipleZplToPrinter(macAddress, zplList);
@@ -808,7 +806,7 @@ class PrinterManager {
   Future<ZebraPrinterStatus> getZebraPrinterStatus(String macAddress) async {
     _checkDisposed();
     if (macAddress.isEmpty) {
-      return ZebraPrinterStatus.error('MAC adresi boş olamaz');
+      return ZebraPrinterStatus.error('MAC address cannot be empty');
     }
 
     try {
@@ -822,7 +820,7 @@ class PrinterManager {
       return status;
     } on PlatformException catch (e) {
       _config.log('getZebraPrinterStatus error: ${e.code} - ${e.message}');
-      return ZebraPrinterStatus.error('Durum hatası (${e.code}): ${e.message}', address: macAddress);
+      return ZebraPrinterStatus.error('Status error (${e.code}): ${e.message}', address: macAddress);
     } catch (e) {
       _config.log('getZebraPrinterStatus unexpected error: $e');
       return ZebraPrinterStatus.error('Beklenmeyen hata: $e', address: macAddress);
@@ -905,7 +903,7 @@ class PrinterManager {
 
     // Timeout
     _config.log('waitForPrinterReady: Timeout after ${timeout.inSeconds}s');
-    return ZebraPrinterStatus(isReadyToPrint: lastStatus.isReadyToPrint, isPrinting: lastStatus.isPrinting, errorMessage: 'Yazıcı ${timeout.inSeconds} saniye içinde hazır olmadı', address: macAddress);
+    return ZebraPrinterStatus(isReadyToPrint: lastStatus.isReadyToPrint, isPrinting: lastStatus.isPrinting, errorMessage: 'Printer was not ready within ${timeout.inSeconds} seconds', address: macAddress);
   }
 
   // ==================== LOGGING CONTROL ====================
