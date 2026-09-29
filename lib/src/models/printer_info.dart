@@ -2,23 +2,23 @@
 enum PrinterLanguage {
   /// ZPL (Zebra Programming Language)
   zpl,
-  
+
   /// CPCL (Common Printer Command Language)
   cpcl,
-  
+
   /// Unknown language
   unknown;
-  
+
   /// Creates PrinterLanguage from string
   static PrinterLanguage fromString(String? language) {
     if (language == null) return PrinterLanguage.unknown;
-    
+
     final lower = language.toLowerCase();
     if (lower.contains('zpl')) return PrinterLanguage.zpl;
     if (lower.contains('cpcl')) return PrinterLanguage.cpcl;
     return PrinterLanguage.unknown;
   }
-  
+
   @override
   String toString() {
     switch (this) {
@@ -36,19 +36,19 @@ enum PrinterLanguage {
 class PrinterInfo {
   /// Printer model name
   final String model;
-  
+
   /// Printer serial number
   final String serialNumber;
-  
+
   /// Printer firmware version
   final String firmware;
-  
+
   /// Printer language (ZPL/CPCL)
   final PrinterLanguage language;
-  
+
   /// Raw info string (for debugging)
   final String? rawInfo;
-  
+
   PrinterInfo({
     required this.model,
     required this.serialNumber,
@@ -56,18 +56,18 @@ class PrinterInfo {
     required this.language,
     this.rawInfo,
   });
-  
+
   /// Creates PrinterInfo from raw string response
   /// Parses the string format returned from Android:
   /// "Model: ZD421\nSeri No: XXXX\nFirmware: V84.20.11Z\nDil: ZPL\n"
   factory PrinterInfo.fromString(String info) {
     final lines = info.split('\n');
-    
+
     String model = 'Unknown';
     String serialNumber = 'Unknown';
     String firmware = 'Unknown';
     String languageStr = 'Unknown';
-    
+
     for (var line in lines) {
       if (line.startsWith('Model:')) {
         model = line.substring('Model:'.length).trim();
@@ -79,7 +79,7 @@ class PrinterInfo {
         languageStr = line.substring('Language:'.length).trim();
       }
     }
-    
+
     return PrinterInfo(
       model: model,
       serialNumber: serialNumber,
@@ -88,7 +88,7 @@ class PrinterInfo {
       rawInfo: info,
     );
   }
-  
+
   /// Creates PrinterInfo from Map (for future use if Android returns Map)
   factory PrinterInfo.fromMap(Map<dynamic, dynamic> map) {
     return PrinterInfo(
@@ -99,7 +99,7 @@ class PrinterInfo {
       rawInfo: map['rawInfo'] as String?,
     );
   }
-  
+
   /// Converts to Map
   Map<String, dynamic> toMap() {
     return {
@@ -110,7 +110,7 @@ class PrinterInfo {
       'rawInfo': rawInfo,
     };
   }
-  
+
   /// Returns string representation
   @override
   String toString() {
@@ -121,12 +121,12 @@ class PrinterInfo {
         '  Language: ${language.toString()}\n'
         '}';
   }
-  
+
   /// Returns compact string representation
   String toCompactString() {
     return '$model (S/N: $serialNumber) - $firmware - ${language.toString()}';
   }
-  
+
   /// Returns JSON-like Map for debugging
   Map<String, String> toJson() {
     return {
@@ -137,4 +137,3 @@ class PrinterInfo {
     };
   }
 }
-

@@ -24,7 +24,11 @@ class PrintLockedException implements Exception {
   /// Address of the printer that was requested
   final String requestedAddress;
 
-  PrintLockedException(this.message, {required this.currentPrintingAddress, required this.requestedAddress});
+  PrintLockedException(
+    this.message, {
+    required this.currentPrintingAddress,
+    required this.requestedAddress,
+  });
 
   @override
   String toString() =>
@@ -173,35 +177,68 @@ class PrintProgress {
       isHeadTooHot: data['isHeadTooHot'] as bool?,
       isRibbonOut: data['isRibbonOut'] as bool?,
       labelsRemainingInBatch: data['labelsRemainingInBatch'] as int?,
-      timestamp: data['timestamp'] != null ? DateTime.fromMillisecondsSinceEpoch(data['timestamp'] as int) : DateTime.now(),
+      timestamp:
+          data['timestamp'] != null
+              ? DateTime.fromMillisecondsSinceEpoch(data['timestamp'] as int)
+              : DateTime.now(),
     );
   }
 
   /// Creates idle progress
-  factory PrintProgress.idle() => PrintProgress(state: PrintState.idle, percentage: 0, message: 'Ready');
+  factory PrintProgress.idle() =>
+      PrintProgress(state: PrintState.idle, percentage: 0, message: 'Ready');
 
   /// Creates connecting progress
-  factory PrintProgress.connecting() => PrintProgress(state: PrintState.connecting, percentage: 10, message: 'Connecting to printer...');
+  factory PrintProgress.connecting() => PrintProgress(
+    state: PrintState.connecting,
+    percentage: 10,
+    message: 'Connecting to printer...',
+  );
 
   /// Creates sending progress
-  factory PrintProgress.sending({int percentage = 30}) => PrintProgress(state: PrintState.sending, percentage: percentage, message: 'Sending data to printer...');
+  factory PrintProgress.sending({int percentage = 30}) => PrintProgress(
+    state: PrintState.sending,
+    percentage: percentage,
+    message: 'Sending data to printer...',
+  );
 
   /// Creates printing progress
-  factory PrintProgress.printing({int percentage = 50}) => PrintProgress(state: PrintState.printing, percentage: percentage, message: 'Printing...');
+  factory PrintProgress.printing({int percentage = 50}) => PrintProgress(
+    state: PrintState.printing,
+    percentage: percentage,
+    message: 'Printing...',
+  );
 
   /// Creates processing progress
-  factory PrintProgress.processing({int percentage = 70}) => PrintProgress(state: PrintState.processing, percentage: percentage, message: 'Printer is processing...');
+  factory PrintProgress.processing({int percentage = 70}) => PrintProgress(
+    state: PrintState.processing,
+    percentage: percentage,
+    message: 'Printer is processing...',
+  );
 
   /// Creates completed progress
-  factory PrintProgress.completed() => PrintProgress(state: PrintState.completed, percentage: 100, message: 'Print completed successfully');
+  factory PrintProgress.completed() => PrintProgress(
+    state: PrintState.completed,
+    percentage: 100,
+    message: 'Print completed successfully',
+  );
 
   /// Creates error progress
-  factory PrintProgress.error(String error) => PrintProgress(state: PrintState.error, percentage: 0, errorMessage: error);
+  factory PrintProgress.error(String error) => PrintProgress(
+    state: PrintState.error,
+    percentage: 0,
+    errorMessage: error,
+  );
 
   // ==================== HELPER GETTERS ====================
 
   /// Is print in progress?
-  bool get isInProgress => state == PrintState.connecting || state == PrintState.sending || state == PrintState.printing || state == PrintState.verifying || state == PrintState.processing;
+  bool get isInProgress =>
+      state == PrintState.connecting ||
+      state == PrintState.sending ||
+      state == PrintState.printing ||
+      state == PrintState.verifying ||
+      state == PrintState.processing;
 
   /// Is print completed?
   bool get isCompleted => state == PrintState.completed;
@@ -210,7 +247,12 @@ class PrintProgress {
   bool get hasError => state == PrintState.error;
 
   /// Does printer have any warning/error status?
-  bool get hasPrinterIssue => (isPaperOut ?? false) || (isHeadOpen ?? false) || (isHeadCold ?? false) || (isHeadTooHot ?? false) || (isRibbonOut ?? false);
+  bool get hasPrinterIssue =>
+      (isPaperOut ?? false) ||
+      (isHeadOpen ?? false) ||
+      (isHeadCold ?? false) ||
+      (isHeadTooHot ?? false) ||
+      (isRibbonOut ?? false);
 
   /// Progress for batch printing (e.g., "3/10")
   String get batchProgressText {
@@ -230,7 +272,9 @@ class PrintProgress {
 
   @override
   String toString() {
-    final buffer = StringBuffer('PrintProgress{state: $state, percentage: $percentage%');
+    final buffer = StringBuffer(
+      'PrintProgress{state: $state, percentage: $percentage%',
+    );
     if (isBatch) {
       buffer.write(', label: $batchProgressText');
     }
@@ -251,10 +295,18 @@ class DiscoveredPrinter {
   final String address;
   final String friendlyName;
 
-  DiscoveredPrinter({required this.type, required this.address, required this.friendlyName});
+  DiscoveredPrinter({
+    required this.type,
+    required this.address,
+    required this.friendlyName,
+  });
 
   factory DiscoveredPrinter.fromMap(Map<dynamic, dynamic> map) {
-    return DiscoveredPrinter(type: map['type'] as String? ?? '', address: map['address'] as String? ?? '', friendlyName: map['friendlyName'] as String? ?? '');
+    return DiscoveredPrinter(
+      type: map['type'] as String? ?? '',
+      address: map['address'] as String? ?? '',
+      friendlyName: map['friendlyName'] as String? ?? '',
+    );
   }
 
   @override
@@ -280,7 +332,9 @@ class PrinterManager {
   final ZebraConfig _config = ZebraConfig();
 
   /// Method channel
-  static const MethodChannel _channel = MethodChannel('com.sameetdmr.zebra_printer/zebra_print');
+  static const MethodChannel _channel = MethodChannel(
+    'com.sameetdmr.zebra_printer/zebra_print',
+  );
 
   /// Callback for when a printer is found during discovery
   void Function(DiscoveredPrinter printer)? onPrinterFound;
@@ -302,7 +356,9 @@ class PrinterManager {
   void _checkDisposed() {
     if (_isDisposed) {
       _config.log('⚠️ PrinterManager is disposed! Call reinitialize() first.');
-      throw StateError('PrinterManager has been disposed. Call reinitialize() to use again.');
+      throw StateError(
+        'PrinterManager has been disposed. Call reinitialize() to use again.',
+      );
     }
   }
 
@@ -348,12 +404,23 @@ class PrinterManager {
 
     // ⏱️ Check for timeout - if printing for more than 15 seconds, auto-release
     final lockTime = _printerLocks[address];
-    if (lockTime != null && progress.state != PrintState.completed && progress.state != PrintState.error) {
+    if (lockTime != null &&
+        progress.state != PrintState.completed &&
+        progress.state != PrintState.error) {
       final duration = DateTime.now().difference(lockTime);
       if (duration > _maxPrintDuration) {
-        _config.log('⏱️ Print timeout for $address! Auto-releasing lock after ${duration.inSeconds}s');
+        _config.log(
+          '⏱️ Print timeout for $address! Auto-releasing lock after ${duration.inSeconds}s',
+        );
         _printerLocks.remove(address);
-        onPrintProgress?.call(PrintProgress(state: PrintState.error, percentage: 0, errorMessage: 'Print timeout (${_maxPrintDuration.inSeconds}s)', address: address));
+        onPrintProgress?.call(
+          PrintProgress(
+            state: PrintState.error,
+            percentage: 0,
+            errorMessage: 'Print timeout (${_maxPrintDuration.inSeconds}s)',
+            address: address,
+          ),
+        );
         return;
       }
     }
@@ -372,12 +439,16 @@ class PrinterManager {
 
       case PrintState.completed:
         // 🔓 Yazdırma tamamlandı - lock serbest bırak
-        _config.log('🔓 Auto-lock released for $address: completed (${progress.percentage}%)');
+        _config.log(
+          '🔓 Auto-lock released for $address: completed (${progress.percentage}%)',
+        );
         _printerLocks.remove(address);
 
       case PrintState.error:
         // 🔓 Hata oluştu - lock serbest bırak
-        _config.log('🔓 Auto-lock released for $address: error - ${progress.errorMessage}');
+        _config.log(
+          '🔓 Auto-lock released for $address: error - ${progress.errorMessage}',
+        );
         _printerLocks.remove(address);
 
       case PrintState.idle:
@@ -391,13 +462,21 @@ class PrinterManager {
     switch (call.method) {
       case 'onPrinterFound':
         if (onPrinterFound != null && call.arguments != null) {
-          final printer = DiscoveredPrinter.fromMap(call.arguments as Map<dynamic, dynamic>);
+          final printer = DiscoveredPrinter.fromMap(
+            call.arguments as Map<dynamic, dynamic>,
+          );
           onPrinterFound!(printer);
         }
       case 'onDiscoveryFinished':
         if (onDiscoveryFinished != null && call.arguments != null) {
           final List<dynamic> printersList = call.arguments as List<dynamic>;
-          final List<DiscoveredPrinter> printers = printersList.map((e) => DiscoveredPrinter.fromMap(e as Map<dynamic, dynamic>)).toList();
+          final List<DiscoveredPrinter> printers =
+              printersList
+                  .map(
+                    (e) =>
+                        DiscoveredPrinter.fromMap(e as Map<dynamic, dynamic>),
+                  )
+                  .toList();
           onDiscoveryFinished!(printers);
         }
       case 'onConnectionStateChanged':
@@ -410,7 +489,9 @@ class PrinterManager {
         if (call.arguments != null) {
           final progressData = call.arguments as Map<dynamic, dynamic>;
           final progress = PrintProgress.fromNative(progressData);
-          _config.log('Native print progress: ${progress.state} - ${progress.percentage}% - ${progress.message}');
+          _config.log(
+            'Native print progress: ${progress.state} - ${progress.percentage}% - ${progress.message}',
+          );
 
           // 🔒 AUTO LOCK MANAGEMENT based on progress
           _handlePrintLockFromProgress(progress);
@@ -430,11 +511,15 @@ class PrinterManager {
   /// [type] Discovery type: DiscoveryType.bluetooth, DiscoveryType.network, or DiscoveryType.both (default)
   ///
   /// Returns a list of discovered Zebra printers
-  Future<List<DiscoveredPrinter>> startDiscovery({DiscoveryType type = DiscoveryType.both}) async {
+  Future<List<DiscoveredPrinter>> startDiscovery({
+    DiscoveryType type = DiscoveryType.both,
+  }) async {
     _checkDisposed();
     try {
       _config.log('startDiscovery called with type: ${type.value}');
-      final result = await _channel.invokeMethod('startDiscovery', {'type': type.value});
+      final result = await _channel.invokeMethod('startDiscovery', {
+        'type': type.value,
+      });
 
       if (result == null) {
         _config.log('startDiscovery returned null');
@@ -444,7 +529,10 @@ class PrinterManager {
       final List<dynamic> printersList = result as List<dynamic>;
       _config.log('startDiscovery found ${printersList.length} printers');
 
-      final printers = printersList.map((e) => DiscoveredPrinter.fromMap(e as Map<dynamic, dynamic>)).toList();
+      final printers =
+          printersList
+              .map((e) => DiscoveredPrinter.fromMap(e as Map<dynamic, dynamic>))
+              .toList();
 
       return printers;
     } on PlatformException catch (e) {
@@ -478,7 +566,9 @@ class PrinterManager {
     _checkDisposed();
     try {
       _config.log('connect called for address: $address');
-      final result = await _channel.invokeMethod('connect', {'address': address});
+      final result = await _channel.invokeMethod('connect', {
+        'address': address,
+      });
       _config.log('connect result: $result');
       return result as bool? ?? false;
     } on PlatformException catch (e) {
@@ -496,7 +586,9 @@ class PrinterManager {
     _checkDisposed();
     try {
       _config.log('disconnect called for address: $address');
-      final result = await _channel.invokeMethod('disconnect', {'address': address});
+      final result = await _channel.invokeMethod('disconnect', {
+        'address': address,
+      });
       _config.log('disconnect result: $result');
       return result as bool? ?? false;
     } on PlatformException catch (e) {
@@ -514,7 +606,9 @@ class PrinterManager {
     _checkDisposed();
     try {
       _config.log('isConnected called for address: $address');
-      final result = await _channel.invokeMethod('isConnected', {'address': address});
+      final result = await _channel.invokeMethod('isConnected', {
+        'address': address,
+      });
       _config.log('isConnected result: $result');
       return result as bool? ?? false;
     } on PlatformException catch (e) {
@@ -531,7 +625,9 @@ class PrinterManager {
     _checkDisposed();
     try {
       _config.log('unpairPrinter called for: $address');
-      final result = await _channel.invokeMethod('unpairPrinter', {'address': address});
+      final result = await _channel.invokeMethod('unpairPrinter', {
+        'address': address,
+      });
       _config.log('unpairPrinter successful');
       return result as bool;
     } on PlatformException catch (e) {
@@ -565,7 +661,9 @@ class PrinterManager {
             return BluetoothDevice(
               name: map['friendlyName'] as String?,
               address: map['address'] as String,
-              type: BluetoothDeviceType.classic, // Paired devices are classic Bluetooth
+              type:
+                  BluetoothDeviceType
+                      .classic, // Paired devices are classic Bluetooth
               bondState: BluetoothBondState.bonded, // All are bonded
             );
           }).toList();
@@ -586,7 +684,9 @@ class PrinterManager {
       _config.log('⚠️ Force releasing print lock for: $address');
       _printerLocks.remove(address);
     } else {
-      _config.log('⚠️ Force releasing ALL print locks (${_printerLocks.length} printers)');
+      _config.log(
+        '⚠️ Force releasing ALL print locks (${_printerLocks.length} printers)',
+      );
       _printerLocks.clear();
     }
   }
@@ -610,7 +710,12 @@ class PrinterManager {
         finalZplToSend = "$initCommands$zplData^XZ";
       }
 
-      final String result = await _channel.invokeMethod<String>('printLabel', {'address': macAddress, 'data': finalZplToSend}) ?? '';
+      final String result =
+          await _channel.invokeMethod<String>('printLabel', {
+            'address': macAddress,
+            'data': finalZplToSend,
+          }) ??
+          '';
       return result;
     } on PlatformException catch (e) {
       throw Exception("Print Error (${e.code}): ${e.message}");
@@ -644,11 +749,22 @@ class PrinterManager {
     // 🔒 Check if THIS printer is currently printing
     if (isPrinterLocked(macAddress)) {
       final duration = getPrinterLockDuration(macAddress);
-      throw PrintLockedException('Print in progress on this printer: $macAddress (${duration?.inSeconds ?? 0}s)', currentPrintingAddress: macAddress, requestedAddress: macAddress);
+      throw PrintLockedException(
+        'Print in progress on this printer: $macAddress (${duration?.inSeconds ?? 0}s)',
+        currentPrintingAddress: macAddress,
+        requestedAddress: macAddress,
+      );
     }
 
     // 🚀 Send immediate "preparing" progress before native "connecting" arrives
-    onPrintProgress?.call(PrintProgress(state: PrintState.connecting, percentage: 5, message: 'Preparing printer...', address: macAddress));
+    onPrintProgress?.call(
+      PrintProgress(
+        state: PrintState.connecting,
+        percentage: 5,
+        message: 'Preparing printer...',
+        address: macAddress,
+      ),
+    );
 
     // Actual print - lock is managed by progress callback
     return _sendZplToPrinter(macAddress, zplData);
@@ -670,11 +786,25 @@ class PrinterManager {
     // 🔒 Check if THIS printer is currently printing
     if (isPrinterLocked(macAddress)) {
       final duration = getPrinterLockDuration(macAddress);
-      throw PrintLockedException('Print in progress on this printer: $macAddress (${duration?.inSeconds ?? 0}s)', currentPrintingAddress: macAddress, requestedAddress: macAddress);
+      throw PrintLockedException(
+        'Print in progress on this printer: $macAddress (${duration?.inSeconds ?? 0}s)',
+        currentPrintingAddress: macAddress,
+        requestedAddress: macAddress,
+      );
     }
 
     // 🚀 Send immediate "preparing" progress before native "connecting" arrives
-    onPrintProgress?.call(PrintProgress(state: PrintState.connecting, percentage: 5, message: 'Preparing printer...', address: macAddress, isBatch: true, currentLabel: 0, totalLabels: zplList.length));
+    onPrintProgress?.call(
+      PrintProgress(
+        state: PrintState.connecting,
+        percentage: 5,
+        message: 'Preparing printer...',
+        address: macAddress,
+        isBatch: true,
+        currentLabel: 0,
+        totalLabels: zplList.length,
+      ),
+    );
 
     // Actual batch print - lock is managed by progress callback
     return _sendMultipleZplToPrinter(macAddress, zplList);
@@ -682,7 +812,10 @@ class PrinterManager {
 
   /// Internal: Sends multiple ZPL codes to the printer
   /// Use [safeBatchPrint] instead for lock-protected batch printing
-  Future<String> _sendMultipleZplToPrinter(String macAddress, List<String> zplList) async {
+  Future<String> _sendMultipleZplToPrinter(
+    String macAddress,
+    List<String> zplList,
+  ) async {
     if (macAddress.isEmpty) {
       throw Exception("MAC address cannot be empty.");
     }
@@ -702,8 +835,15 @@ class PrinterManager {
             }
           }).toList();
 
-      _config.log('_sendMultipleZplToPrinter called for $macAddress with ${finalZplList.length} labels');
-      final String result = await _channel.invokeMethod<String>('printMultipleLabels', {'address': macAddress, 'dataList': finalZplList}) ?? '';
+      _config.log(
+        '_sendMultipleZplToPrinter called for $macAddress with ${finalZplList.length} labels',
+      );
+      final String result =
+          await _channel.invokeMethod<String>('printMultipleLabels', {
+            'address': macAddress,
+            'dataList': finalZplList,
+          }) ??
+          '';
       _config.log('_sendMultipleZplToPrinter result: $result');
       return result;
     } on PlatformException catch (e) {
@@ -720,7 +860,10 @@ class PrinterManager {
   ///
   /// Returns result message if successful
   /// Throws [PrintLockedException] if another print is in progress
-  Future<String> calibratePrinter(String macAddress, CalibrationType calibrationType) async {
+  Future<String> calibratePrinter(
+    String macAddress,
+    CalibrationType calibrationType,
+  ) async {
     return safePrint(macAddress, calibrationType.zplCommand);
   }
 
@@ -769,14 +912,22 @@ class PrinterManager {
 
     try {
       _config.log('Invoking native getPrinterInfo method...');
-      final String result = await _channel.invokeMethod<String>('getPrinterInfo', {'address': macAddress}) ?? '';
+      final String result =
+          await _channel.invokeMethod<String>('getPrinterInfo', {
+            'address': macAddress,
+          }) ??
+          '';
       _config.log('Native method returned: $result');
 
       final printerInfo = PrinterInfo.fromString(result);
-      _config.log('PrinterInfo parsed successfully: ${printerInfo.toCompactString()}');
+      _config.log(
+        'PrinterInfo parsed successfully: ${printerInfo.toCompactString()}',
+      );
       return printerInfo;
     } on PlatformException catch (e) {
-      _config.log('PlatformException in getPrinterInfo: Code: ${e.code}, Message: ${e.message}, Details: ${e.details}');
+      _config.log(
+        'PlatformException in getPrinterInfo: Code: ${e.code}, Message: ${e.message}, Details: ${e.details}',
+      );
       throw Exception("Printer Info Error (${e.code}): ${e.message}");
     } catch (e) {
       _config.log('Unexpected error in getPrinterInfo: $e');
@@ -812,7 +963,12 @@ class PrinterManager {
     try {
       _config.log('getZebraPrinterStatus called for: $macAddress');
 
-      final Map<dynamic, dynamic> result = await _channel.invokeMethod<Map<dynamic, dynamic>>('getZebraPrinterStatus', {'address': macAddress}) ?? {};
+      final Map<dynamic, dynamic> result =
+          await _channel.invokeMethod<Map<dynamic, dynamic>>(
+            'getZebraPrinterStatus',
+            {'address': macAddress},
+          ) ??
+          {};
 
       final status = ZebraPrinterStatus.fromNative(result);
       _config.log('ZebraPrinterStatus: ${status.toCompactString()}');
@@ -820,10 +976,16 @@ class PrinterManager {
       return status;
     } on PlatformException catch (e) {
       _config.log('getZebraPrinterStatus error: ${e.code} - ${e.message}');
-      return ZebraPrinterStatus.error('Status error (${e.code}): ${e.message}', address: macAddress);
+      return ZebraPrinterStatus.error(
+        'Status error (${e.code}): ${e.message}',
+        address: macAddress,
+      );
     } catch (e) {
       _config.log('getZebraPrinterStatus unexpected error: $e');
-      return ZebraPrinterStatus.error('Beklenmeyen hata: $e', address: macAddress);
+      return ZebraPrinterStatus.error(
+        'Beklenmeyen hata: $e',
+        address: macAddress,
+      );
     }
   }
 
@@ -875,35 +1037,52 @@ class PrinterManager {
   /// [pollInterval] Time between status checks (default: 500ms)
   ///
   /// Returns [ZebraPrinterStatus] when ready, or status with error if timeout
-  Future<ZebraPrinterStatus> waitForPrinterReady(String macAddress, {Duration timeout = const Duration(seconds: 10), Duration pollInterval = const Duration(milliseconds: 500)}) async {
+  Future<ZebraPrinterStatus> waitForPrinterReady(
+    String macAddress, {
+    Duration timeout = const Duration(seconds: 10),
+    Duration pollInterval = const Duration(milliseconds: 500),
+  }) async {
     _checkDisposed();
     _config.log('waitForPrinterReady: Waiting for $macAddress...');
 
     final stopwatch = Stopwatch()..start();
-    ZebraPrinterStatus lastStatus = ZebraPrinterStatus.disconnected(address: macAddress);
+    ZebraPrinterStatus lastStatus = ZebraPrinterStatus.disconnected(
+      address: macAddress,
+    );
 
     while (stopwatch.elapsed < timeout) {
       lastStatus = await getZebraPrinterStatus(macAddress);
 
       // Yazıcı hazırsa ve meşgul değilse dön
       if (lastStatus.canPrint && !lastStatus.isBusy) {
-        _config.log('waitForPrinterReady: Printer is ready after ${stopwatch.elapsedMilliseconds}ms');
+        _config.log(
+          'waitForPrinterReady: Printer is ready after ${stopwatch.elapsedMilliseconds}ms',
+        );
         return lastStatus;
       }
 
       // Kritik hata varsa (kağıt yok, kafa açık) hemen dön
       if (lastStatus.hasCriticalError) {
-        _config.log('waitForPrinterReady: Critical error - ${lastStatus.statusMessage}');
+        _config.log(
+          'waitForPrinterReady: Critical error - ${lastStatus.statusMessage}',
+        );
         return lastStatus;
       }
 
-      _config.log('waitForPrinterReady: Still busy... ${lastStatus.statusCode}');
+      _config.log(
+        'waitForPrinterReady: Still busy... ${lastStatus.statusCode}',
+      );
       await Future<void>.delayed(pollInterval);
     }
 
     // Timeout
     _config.log('waitForPrinterReady: Timeout after ${timeout.inSeconds}s');
-    return ZebraPrinterStatus(isReadyToPrint: lastStatus.isReadyToPrint, isPrinting: lastStatus.isPrinting, errorMessage: 'Printer was not ready within ${timeout.inSeconds} seconds', address: macAddress);
+    return ZebraPrinterStatus(
+      isReadyToPrint: lastStatus.isReadyToPrint,
+      isPrinting: lastStatus.isPrinting,
+      errorMessage: 'Printer was not ready within ${timeout.inSeconds} seconds',
+      address: macAddress,
+    );
   }
 
   // ==================== LOGGING CONTROL ====================
@@ -947,12 +1126,12 @@ class PrinterManager {
   bool get isLoggingEnabled => _config.isLoggingEnabled;
 
   // ==================== FONT MANAGEMENT ====================
-  
+
   /// Uploads a font to the printer from assets
   /// ZPL font file is automatically parsed to extract font name
   ///
   /// [macAddress] - The MAC address of the printer
-  /// [assetPath] - Path to the font asset (e.g., "assets/arial/arial.zpl")  
+  /// [assetPath] - Path to the font asset (e.g., "assets/arial/arial.zpl")
   ///
   /// Returns [true] if upload was successful, [false] otherwise
   ///
@@ -969,7 +1148,7 @@ class PrinterManager {
     if (macAddress.isEmpty) {
       throw Exception("MAC address cannot be empty.");
     }
-    
+
     if (assetPath.isEmpty) {
       throw Exception("Asset path cannot be empty.");
     }
@@ -979,23 +1158,24 @@ class PrinterManager {
       final ByteData data = await rootBundle.load(assetPath);
       final Uint8List fontData = data.buffer.asUint8List();
       final String fontName = _extractFontNameFromZpl(fontData);
-      
+
       _config.log('📁 Uploading font: $assetPath to $macAddress as $fontName');
-      
-      final bool result = await _channel.invokeMethod<bool>('uploadFont', {
-        'address': macAddress,
-        'assetPath': assetPath,
-        'fontType': fontName,
-      }) ?? false;
+
+      final bool result =
+          await _channel.invokeMethod<bool>('uploadFont', {
+            'address': macAddress,
+            'assetPath': assetPath,
+            'fontType': fontName,
+          }) ??
+          false;
 
       if (result) {
         _config.log('✅ Font upload successful: $fontName');
       } else {
         _config.log('❌ Font upload failed: $fontName');
       }
-      
+
       return result;
-      
     } catch (e) {
       _config.log('❌ Font upload error: $e');
       throw Exception('Font upload failed: $e');
@@ -1008,7 +1188,7 @@ class PrinterManager {
     if (macAddress.isEmpty) {
       throw Exception("MAC address cannot be empty.");
     }
-    
+
     if (fontData.isEmpty) {
       throw Exception("Font data cannot be empty.");
     }
@@ -1016,23 +1196,26 @@ class PrinterManager {
     try {
       // Extract font name from ZPL data (e.g., "~DYE:arial,B,T,915212" -> "arial")
       String fontName = _extractFontNameFromZpl(fontData);
-      
-      _config.log('📁 Uploading font data: ${fontData.length} bytes to $macAddress as $fontName');
-      
-      final bool result = await _channel.invokeMethod<bool>('uploadFontData', {
-        'address': macAddress,
-        'fontData': fontData,
-        'fontType': fontName,
-      }) ?? false;
+
+      _config.log(
+        '📁 Uploading font data: ${fontData.length} bytes to $macAddress as $fontName',
+      );
+
+      final bool result =
+          await _channel.invokeMethod<bool>('uploadFontData', {
+            'address': macAddress,
+            'fontData': fontData,
+            'fontType': fontName,
+          }) ??
+          false;
 
       if (result) {
         _config.log('✅ Font data upload successful: $fontName');
       } else {
         _config.log('❌ Font data upload failed: $fontName');
       }
-      
+
       return result;
-      
     } catch (e) {
       _config.log('❌ Font data upload error: $e');
       throw Exception('Font data upload failed: $e');
@@ -1045,21 +1228,22 @@ class PrinterManager {
     try {
       // Convert first 100 bytes to string to find the font name
       final String header = String.fromCharCodes(fontData.take(100));
-      
+
       // Look for ~DYE:fontname pattern
       final RegExp dyePattern = RegExp(r'~?DYE?:([^,]+)');
       final Match? match = dyePattern.firstMatch(header);
-      
+
       if (match != null && match.group(1) != null) {
         final String fontName = match.group(1)!.trim();
         _config.log('🔍 Extracted font name from ZPL: $fontName');
         return fontName;
       }
-      
+
       // Fallback: use "font" as default name
-      _config.log('⚠️ Could not extract font name from ZPL, using default: "font"');
+      _config.log(
+        '⚠️ Could not extract font name from ZPL, using default: "font"',
+      );
       return "font";
-      
     } catch (e) {
       _config.log('⚠️ Error extracting font name: $e, using default: "font"');
       return "font";

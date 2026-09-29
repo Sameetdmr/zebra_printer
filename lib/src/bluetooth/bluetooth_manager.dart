@@ -51,7 +51,9 @@ class BluetoothManager {
   }
 
   /// Method channel
-  static const MethodChannel _channel = MethodChannel('com.sameetdmr.zebra_printer/bluetooth');
+  static const MethodChannel _channel = MethodChannel(
+    'com.sameetdmr.zebra_printer/bluetooth',
+  );
 
   /// Config instance for logging
   final ZebraConfig _config = ZebraConfig();
@@ -80,7 +82,8 @@ class BluetoothManager {
   BluetoothScanState _scanState = BluetoothScanState.idle;
 
   /// Connection state
-  BluetoothConnectionState _connectionState = BluetoothConnectionState.disconnected;
+  BluetoothConnectionState _connectionState =
+      BluetoothConnectionState.disconnected;
 
   /// Connected device
   BluetoothDevice? _connectedDevice;
@@ -94,8 +97,12 @@ class BluetoothManager {
   /// Throws exception if manager is disposed
   void _checkDisposed() {
     if (_isDisposed) {
-      _config.log('⚠️ BluetoothManager is disposed! Call reinitialize() first.');
-      throw StateError('BluetoothManager has been disposed. Call reinitialize() to use again.');
+      _config.log(
+        '⚠️ BluetoothManager is disposed! Call reinitialize() first.',
+      );
+      throw StateError(
+        'BluetoothManager has been disposed. Call reinitialize() to use again.',
+      );
     }
   }
 
@@ -112,10 +119,13 @@ class BluetoothManager {
   BluetoothDevice? get connectedDevice => _connectedDevice;
 
   /// Is scanning in progress?
-  bool get isScanning => _scanState == BluetoothScanState.scanning || _scanState == BluetoothScanState.starting;
+  bool get isScanning =>
+      _scanState == BluetoothScanState.scanning ||
+      _scanState == BluetoothScanState.starting;
 
   /// Is connection established?
-  bool get isConnected => _connectionState == BluetoothConnectionState.connected;
+  bool get isConnected =>
+      _connectionState == BluetoothConnectionState.connected;
 
   /// Returns the list of found devices (unmodifiable list)
   List<BluetoothDevice> get devices => List.unmodifiable(_devices);
@@ -130,10 +140,12 @@ class BluetoothManager {
   Stream<void> get onDiscoveryFinished => _discoveryFinishedController.stream;
 
   /// Stream triggered when connection state changes
-  Stream<BluetoothConnectionState> get onConnectionStateChanged => _connectionStateController.stream;
+  Stream<BluetoothConnectionState> get onConnectionStateChanged =>
+      _connectionStateController.stream;
 
   /// Stream triggered when scan state changes
-  Stream<BluetoothScanState> get onScanStateChanged => _scanStateController.stream;
+  Stream<BluetoothScanState> get onScanStateChanged =>
+      _scanStateController.stream;
 
   /// Sets up the method channel handler and initializes controllers
   void _init() {
@@ -159,7 +171,8 @@ class BluetoothManager {
         break;
 
       case 'onConnectionStateChanged':
-        final Map<dynamic, dynamic> args = call.arguments as Map<dynamic, dynamic>;
+        final Map<dynamic, dynamic> args =
+            call.arguments as Map<dynamic, dynamic>;
         final int state = args['state'] as int;
         final String? address = args['address'] as String?;
 
@@ -188,7 +201,10 @@ class BluetoothManager {
         break;
 
       default:
-        throw PlatformException(code: 'Unimplemented', message: 'Method ${call.method} not implemented');
+        throw PlatformException(
+          code: 'Unimplemented',
+          message: 'Method ${call.method} not implemented',
+        );
     }
     return null;
   }
@@ -235,8 +251,15 @@ class BluetoothManager {
   /// Gets and updates the bonded devices
   Future<List<BluetoothDevice>> getBondedDevices() async {
     _checkDisposed();
-    final List<dynamic> result = await _channel.invokeMethod<List<dynamic>>('getBondedDevices') ?? [];
-    final devices = result.map((deviceMap) => BluetoothDevice.fromMap(deviceMap as Map<dynamic, dynamic>)).toList();
+    final List<dynamic> result =
+        await _channel.invokeMethod<List<dynamic>>('getBondedDevices') ?? [];
+    final devices =
+        result
+            .map(
+              (deviceMap) =>
+                  BluetoothDevice.fromMap(deviceMap as Map<dynamic, dynamic>),
+            )
+            .toList();
 
     // Update the bonded devices list
     _bondedDevices.clear();
@@ -294,7 +317,8 @@ class BluetoothManager {
     _updateScanState(BluetoothScanState.stopping);
 
     try {
-      final result = await _channel.invokeMethod<bool>('stopDiscovery') ?? false;
+      final result =
+          await _channel.invokeMethod<bool>('stopDiscovery') ?? false;
       _updateScanState(BluetoothScanState.idle);
       return result;
     } catch (e) {
@@ -307,7 +331,10 @@ class BluetoothManager {
   Future<bool> pairDevice(String address) async {
     _checkDisposed();
     try {
-      return await _channel.invokeMethod<bool>('pairDevice', {'address': address}) ?? false;
+      return await _channel.invokeMethod<bool>('pairDevice', {
+            'address': address,
+          }) ??
+          false;
     } catch (e) {
       return false;
     }
@@ -322,7 +349,10 @@ class BluetoothManager {
         await disconnect();
       }
 
-      return await _channel.invokeMethod<bool>('unpairDevice', {'address': address}) ?? false;
+      return await _channel.invokeMethod<bool>('unpairDevice', {
+            'address': address,
+          }) ??
+          false;
     } catch (e) {
       return false;
     }
@@ -332,7 +362,8 @@ class BluetoothManager {
   Future<bool> connect(String address) async {
     _checkDisposed();
     _config.log('connect called for: $address');
-    if (_connectionState == BluetoothConnectionState.connected || _connectionState == BluetoothConnectionState.connecting) {
+    if (_connectionState == BluetoothConnectionState.connected ||
+        _connectionState == BluetoothConnectionState.connecting) {
       _config.log('Already connected or connecting, returning false');
       return false;
     }
@@ -340,7 +371,9 @@ class BluetoothManager {
     _updateConnectionState(BluetoothConnectionState.connecting);
 
     try {
-      final result = await _channel.invokeMethod<bool>('connect', {'address': address}) ?? false;
+      final result =
+          await _channel.invokeMethod<bool>('connect', {'address': address}) ??
+          false;
       _config.log('connect result: $result');
       return result;
     } catch (e) {
@@ -376,7 +409,7 @@ class BluetoothManager {
   Future<void> dispose() async {
     if (_isDisposed) return;
     _config.log('BluetoothManager disposing...');
-    
+
     // Stop active scanning if any
     if (isScanning) {
       await stopDiscovery();
@@ -415,7 +448,7 @@ class BluetoothManager {
 
     // ✅ Recreate stream controllers (they were closed in dispose)
     _initControllers();
-    
+
     _channel.setMethodCallHandler(_handleMethodCall);
     _scanState = BluetoothScanState.idle;
     _connectionState = BluetoothConnectionState.disconnected;

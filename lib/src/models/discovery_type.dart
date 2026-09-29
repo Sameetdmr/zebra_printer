@@ -2,10 +2,10 @@
 enum DiscoveryType {
   /// Bluetooth discovery only
   bluetooth('bluetooth'),
-  
+
   /// Network discovery only
   network('network'),
-  
+
   /// Both Bluetooth and Network discovery
   both('both');
 
