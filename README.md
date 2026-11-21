@@ -5,11 +5,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-android-green.svg)](https://pub.dev/packages/zebra_printer)
 
-A Flutter plugin for **Zebra Label Printers** — built on the official **Zebra Link-OS™ SDK**.
+A Flutter plugin for **Zebra label printers over Bluetooth**, built on the official **Zebra Link-OS™ SDK** (Android build 2.17.5585).
 
-Unlike generic Bluetooth plugins, this package communicates with Zebra printers the right way: through the SDK that Zebra itself provides. That means reliable discovery, real printer status (paper out, head open, ribbon out), and optimized printing for high-volume label workflows.
+It is designed for a **shared printer**: one Bluetooth printer used by many handheld devices. Every print connects, sends the job and **releases the printer right away**, so the next device can use it. If the printer is busy, the call waits for its turn instead of failing.
 
-> **Android only** — iOS is not supported by the Zebra Link-OS SDK for Bluetooth printing.
+> **Android only.** iOS support is planned (the Zebra iOS SDK supports MFi Bluetooth) but not implemented yet.
 
 ---
 
@@ -19,12 +19,34 @@ Unlike generic Bluetooth plugins, this package communicates with Zebra printers 
 |---|---|
 | Find nearby Zebra printers | `startDiscovery()` |
 | Print a ZPL label | `safePrint(address, zpl)` |
-| Print 100 labels at once | `safeBatchPrint(address, zplList)` |
-| Check if printer is ready | `getZebraPrinterStatus(address)` |
-| Get model, serial, firmware | `getPrinterInfo(address)` |
+| Print many labels in one session | `safeBatchPrint(address, zplList)` |
+| Print an image (PNG/JPG) | `printImage(address, bytes)` |
+| Send raw commands (SGD, `~JC`, ...) | `sendCommand(address, command)` |
+| Check if the printer is ready | `getZebraPrinterStatus(address)` |
+| Model, serial, firmware, Link-OS, Protected Mode | `getPrinterInfo(address)` |
 | Upload a custom font | `uploadFont(address, assetPath)` |
-| Pair / unpair devices | `pairDevice()` / `unpairPrinter()` |
-| Track print progress (0–100%) | `onPrintProgress` callback |
+| Calibrate media | `calibratePrinter(address, CalibrationType.gap)` |
+| Track progress and waiting | `onPrintProgress` |
+
+---
+
+## How a print works (shared printer)
+
+Most Zebra printers accept **one Bluetooth link at a time**. With ten devices and one printer, each device must hold the link as briefly as possible:
+
+```
+safePrint()
+  └─ queue (jobs from this app run one by one)
+       └─ connect ──► printer busy? wait with back-off + jitter (up to 30 s)
+            └─ status check on the same link (paper / head / ribbon / pause)
+                 └─ send ZPL
+                      └─ short drain delay (400 ms) ──► disconnect
+```
+
+- **No permanent connection.** Nothing in `PrinterManager` keeps the printer connected after a job (unless you opt in with `keepAlive`).
+- **Busy printer = wait, not fail.** Retries use exponential back-off with random jitter so devices do not collide in lock-step. You get `PrintState.waiting` events while waiting.
+- **Typed errors.** After the wait budget you get `ZebraPrinterErrorCode.printerBusy` (someone else is printing) or `printerUnreachable` (off / out of range), so you can tell the user what to do.
+- **Queue inside the app.** A second `safePrint` while the first is running is queued, not rejected.
 
 ---
 
@@ -32,246 +54,242 @@ Unlike generic Bluetooth plugins, this package communicates with Zebra printers 
 
 ```yaml
 dependencies:
-  zebra_printer: ^0.4.3
+  zebra_printer: ^0.6.0
 ```
 
-### Android Permissions
+### Android permissions
 
-Add these to your `android/app/src/main/AndroidManifest.xml`, **before** the `<application>` tag:
+The plugin's manifest already declares these and they are merged into your app. You still have to **request the runtime permissions** (`BLUETOOTH_CONNECT`, `BLUETOOTH_SCAN` on Android 12+, location on Android 11 and lower), e.g. with `permission_handler`.
 
 ```xml
-<!-- Required for Bluetooth on Android ≤ 11 -->
 <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
 <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-
-<!-- Required for Bluetooth on Android 12+ -->
 <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
-
-<!-- Required for Bluetooth discovery -->
-<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-
-<!-- Required for Network discovery -->
-<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
 ```
 
 ---
 
-## Quick Start
-
-### 1 — Create the manager
+## Quick start
 
 ```dart
 import 'package:zebra_printer/zebra_printer.dart';
 
 final printer = PrinterManager(); // singleton
-```
+const mac = 'AC:3F:A4:12:34:56';  // "AC3FA4123456" also works
 
-### 2 — Discover printers
-
-```dart
-// Set callbacks before starting discovery
-printer.onPrinterFound = (p) {
-  print('Found: ${p.friendlyName} (${p.address})');
-};
-
-printer.onDiscoveryFinished = (printers) {
-  print('Discovery done. ${printers.length} printer(s) found.');
-};
-
-// Start Bluetooth discovery
-await printer.startDiscovery(type: DiscoveryType.bluetooth);
-```
-
-### 3 — Print a label
-
-```dart
-// safePrint handles locking, retries, and progress tracking automatically
-await printer.safePrint(
-  'AC:3F:A4:XX:XX:XX',
-  '^XA^FO50,50^A0N,50,50^FDHello Zebra!^FS^XZ',
-);
-```
-
-### 4 — Track progress
-
-```dart
-printer.onPrintProgress = (progress) {
-  print('${progress.percentage}% — ${progress.state}');
-
-  if (progress.hasError) {
-    print('Error: ${progress.errorMessage}');
-  }
-
-  if (progress.hasPrinterIssue) {
-    print('Warning: ${progress.printerWarning}');
+printer.onPrintProgress = (p) {
+  if (p.isWaiting) {
+    showStatus('Printer busy, waiting... (${p.waited?.inSeconds}s)');
+  } else if (p.isCompleted) {
+    showStatus('Printed');
   }
 };
+
+try {
+  await printer.safePrint(mac, '^XA^FO50,50^A0N,50,50^FDHello Zebra!^FS^XZ');
+} on ZebraPrinterException catch (e) {
+  switch (e.code) {
+    case ZebraPrinterErrorCode.printerBusy:
+      showError('Printer is used by another device. Try again.');
+    case ZebraPrinterErrorCode.printerUnreachable:
+      showError('Printer is off or out of range.');
+    case ZebraPrinterErrorCode.paperOut:
+      showError('Load paper.');
+    default:
+      showError(e.message);
+  }
+}
 ```
 
-### 5 — Batch print (multiple labels, one connection)
+### Batch print (one session for many labels)
 
 ```dart
-final labels = List.generate(
-  10,
-  (i) => '^XA^FO50,50^A0N,50,50^FDLabel ${i + 1}^FS^XZ',
-);
+final labels = List.generate(10, (i) => '^XA^FO50,50^A0N,50,50^FDLabel ${i + 1}^FS^XZ');
+await printer.safeBatchPrint(mac, labels);
+```
 
-await printer.safeBatchPrint('AC:3F:A4:XX:XX:XX', labels);
+### Print an image
+
+```dart
+final bytes = (await rootBundle.load('assets/logo.png')).buffer.asUint8List();
+await printer.printImage(mac, bytes, x: 20, y: 20, width: 300); // dots; 0 = original size
 ```
 
 ---
 
-## Printer Status
+## Options (`PrintOptions`)
 
-Before printing, you can check if the printer is ready:
+Every printer call takes an optional `options:`. Defaults are tuned for a shared printer; set `printer.defaultOptions` to change them app-wide.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `maxWait` | 30 s | Total time to wait for a busy/unreachable printer |
+| `initialRetryDelay` / `maxRetryDelay` | 500 ms / 4 s | Back-off between connection attempts (doubles each time) |
+| `jitter` | `true` | Randomise delays (50–100 %) so devices do not retry together |
+| `drainDelay` | 400 ms | Pause after the last byte before disconnecting (prevents cut-off data) |
+| `keepAlive` | `0` | Keep the link open after a job. **Leave at 0 for a shared printer** |
+| `checkStatusBeforePrint` | `true` | Read status on the same link and fail fast on paper out / head open / ribbon out / paused |
+| `waitForCompletion` | `false` | Keep the link until the printer finished the format (holds the printer longer) |
+| `insecure` | `false` | Unbonded Bluetooth link: devices need not pair with the printer (see below) |
 
 ```dart
-final status = await printer.getZebraPrinterStatus('AC:3F:A4:XX:XX:XX');
+// Rush hour: wait up to a minute
+await printer.safePrint(mac, zpl, options: const PrintOptions(maxWait: Duration(seconds: 60)));
 
-if (status.isReadyToPrint) {
-  print('Ready to print!');
+// A printer used by this device only: reuse the link between quick prints
+printer.defaultOptions = PrintOptions.dedicated; // keepAlive: 2 s
+```
+
+### Many devices without pairing each one (`insecure`)
+
+By default every device must be paired (bonded) with the printer. With many devices that is tedious, and some printers keep a limited number of pairings. `insecure: true` uses an unbonded link instead. The printer must allow it:
+
+```
+! U1 setvar "bluetooth.minimum_security_mode" "1"
+```
+
+The link is not encrypted. Decide based on your security requirements.
+
+---
+
+## Error codes (`ZebraPrinterErrorCode`)
+
+| Code | Meaning |
+|---|---|
+| `printerBusy` | Another device held the printer for the whole `maxWait` |
+| `printerUnreachable` | Printer off, out of range or not answering |
+| `notPaired` | Device is not paired with the printer (secure mode) |
+| `permissionDenied` | Missing `BLUETOOTH_CONNECT` / `BLUETOOTH_SCAN` |
+| `bluetoothOff` / `bluetoothUnavailable` | Bluetooth off / no adapter |
+| `connectionLost` | Link dropped while sending |
+| `paperOut` / `headOpen` / `ribbonOut` / `printerPaused` | Printer needs attention (`e.needsAttention`) |
+| `languageUnknown` | Printer language could not be detected (e.g. line_print mode) |
+| `invalidArgument` / `unsupportedFormat` | Bad input (empty data, invalid MAC, unknown font/image format) |
+| `cancelled` | Job removed from the queue with `cancelPendingJobs()` |
+
+> Bluetooth cannot report "busy" directly. `printerBusy` vs `printerUnreachable` is inferred from how fast the connection is refused, so treat it as a strong hint.
+
+`e.isTransient` is true for busy / unreachable / connection lost (retrying later makes sense).
+
+---
+
+## Printer status
+
+```dart
+final status = await printer.getZebraPrinterStatus(mac);
+
+if (status.errorCode != null) {
+  print('Could not read status: ${status.errorCode}'); // never throws
+} else if (status.canPrint) {
+  print('Ready');
 } else {
   print(status.statusMessage); // e.g. "🔴 Paper out!"
 }
-
-// Individual status flags
-status.isPaperOut          // paper empty
-status.isHeadOpen          // lid is open
-status.isRibbonOut         // ribbon empty (thermal transfer)
-status.isHeadCold          // head warming up
-status.isHeadTooHot        // head cooling down
-status.isReceiveBufferFull // printer is busy
-status.labelsRemainingInBatch // labels left in current batch
-
-// Helper getters
-status.canPrint            // all-clear: ready & no errors
-status.isBusy              // currently printing or has queued jobs
-status.hasCriticalError    // paper out / head open / ribbon out
 ```
 
-You can also poll until the printer is ready:
+Each status call opens a short Bluetooth session. On a shared printer **do not poll it in a loop** (and avoid `waitForPrinterReady` / `canPrint` before every print): `safePrint` already checks the status on its own link and waits for the printer.
+
+---
+
+## Printer info
 
 ```dart
-final status = await printer.waitForPrinterReady(
-  'AC:3F:A4:XX:XX:XX',
-  timeout: Duration(seconds: 15),
-);
+final info = await printer.getPrinterInfo(mac);
+info.model;           // "ZQ620"
+info.serialNumber;    // "XXQLJ183600123"
+info.firmware;        // "V85.20.19Z"
+info.language;        // PrinterLanguage.zpl
+info.linkOsVersion;   // "7.4" (null on non Link-OS printers)
+info.isProtectedMode; // Link-OS Protected Mode (null if unknown)
 ```
 
 ---
 
-## Printer Info
+## Fonts
 
 ```dart
-final info = await printer.getPrinterInfo('AC:3F:A4:XX:XX:XX');
+// From Flutter assets (declare the file under flutter/assets in pubspec.yaml)
+await printer.uploadFont(mac, 'assets/fonts/arial.zpl'); // ~DY file or raw TTF
 
-print(info.model);        // e.g. "ZD421"
-print(info.serialNumber); // e.g. "D3J185400123"
-print(info.firmware);     // e.g. "V84.20.11Z"
-print(info.language);     // PrinterLanguage.zpl
+// From bytes
+await printer.uploadFontData(mac, fontBytes);
+```
+
+The font is stored as `E:<NAME>`, where NAME comes from the `~DYE:name` header of the file (fallback `FONT`):
+
+```
+^XA^A@N,50,50,E:ARIAL^FO50,50^FDCustom Font^FS^XZ
+```
+
+Raw TTF upload needs a Link-OS printer. For older printers (e.g. iMZ), upload a ZPL `~DY` font file.
+
+---
+
+## Calibration and raw commands
+
+```dart
+await printer.calibratePrinter(mac, CalibrationType.gap); // labels with gaps
+await printer.calibratePrinter(mac, CalibrationType.bar); // black-mark media
+
+// Any raw command, sent as-is (no ^XA/^XZ wrapping, no status check)
+await printer.sendCommand(mac, '! U1 setvar "print.tone" "15"\r\n');
 ```
 
 ---
 
-## Font Upload
-
-Upload a custom TTF font to the printer's flash memory:
+## Queue
 
 ```dart
-// From assets (add font file to pubspec.yaml assets first)
-await printer.uploadFont(
-  'AC:3F:A4:XX:XX:XX',
-  'assets/fonts/arial.zpl', // ZPL-wrapped TTF or raw TTF
-);
-
-// From raw bytes
-await printer.uploadFontData('AC:3F:A4:XX:XX:XX', fontBytes);
-```
-
-Then use the font in ZPL:
-
-```
-^XA^A@N,50,50,E:ARIAL.TTF^FO50,50^FDCustom Font^FS^XZ
+printer.isPrinterLocked(mac);  // a job is running or waiting for this printer
+printer.pendingJobCount(mac);  // jobs waiting behind the running one
+printer.cancelPendingJobs(mac); // drop waiting jobs (running job continues)
 ```
 
 ---
 
-## Pairing Management
+## Discovery and pairing
 
 ```dart
-// List currently paired Zebra printers
+printer.onPrinterFound = (p) => print('${p.friendlyName} ${p.address}');
+final found = await printer.startDiscovery(); // Bluetooth
+await printer.stopDiscovery();                // completes startDiscovery with what was found
+
 final paired = await printer.getPairedPrinters();
-
-// Remove a pairing
-await printer.unpairPrinter('AC:3F:A4:XX:XX:XX');
+await printer.unpairPrinter(mac);
 ```
+
+Discover once and store the printer's MAC address. Do not run discovery before every print: Bluetooth inquiry is slow and disturbs other devices.
 
 ---
 
 ## Architecture
 
-This package provides two managers:
-
 ```
 zebra_printer
-├── PrinterManager      ← Use this for everything Zebra-related
-│   ├── Discovery       (Zebra SDK: BluetoothDiscoverer)
-│   ├── Printing        (Zebra SDK: connection.write + status polling)
-│   ├── Status          (Zebra SDK: printer.getCurrentStatus())
-│   ├── Info            (Zebra SDK: SGD.GET commands)
-│   └── Font Upload     (Zebra SDK: ZebraPrinterLinkOs.downloadTtfFont)
-│
-└── BluetoothManager    ← Generic Bluetooth operations only
-    ├── Device scanning (Android Bluetooth API)
-    ├── Pairing         (Android Bluetooth API)
-    └── Raw connection  (Android BluetoothSocket)
+├── PrinterManager          ← use this for printers
+│   ├── PrintQueue          per-printer FIFO inside the app
+│   └── native (Android)
+│       ├── SharedConnectionManager  connect with back-off + jitter, drain, release
+│       └── Zebra Link-OS SDK        BluetoothConnection(Insecure), PrinterStatus,
+│                                    SGD, GraphicsUtil, FontUtil, BluetoothDiscoverer
+└── BluetoothManager        ← generic Bluetooth: adapter state, scan, pair
 ```
 
-`PrinterManager` uses the official Zebra Link-OS™ SDK for all printer operations.
-`BluetoothManager` uses the standard Android Bluetooth API for generic device management.
+`BluetoothManager.connect()` / `disconnect()` are **deprecated**: they open a raw socket and keep it, which blocks the printer for every other device.
+
+---
+
+## Field testing
+
+The example app has a **Stress Test** screen. Run it on several devices at the same time against one printer: it shows how long each job held the printer, retries and error codes, which helps tune `drainDelay` and `maxWait` for your printer model.
 
 ---
 
 ## Lifecycle
 
-Both managers are **singletons**. Call `dispose()` when you no longer need them (e.g. in your widget's `dispose()`), and `reinitialize()` if you need to reuse them later:
-
-```dart
-@override
-void dispose() {
-  printer.dispose();
-  super.dispose();
-}
-
-// If you need to reuse:
-printer.reinitialize();
-```
-
----
-
-## Calibration & Test Print
-
-```dart
-// Fix misaligned labels
-await printer.calibratePrinter(address, CalibrationType.gap);  // gap labels
-await printer.calibratePrinter(address, CalibrationType.bar);  // black-mark labels
-
-// Print a built-in test label
-await printer.printTestLabel(address);
-```
-
----
-
-## Logging
-
-```dart
-// Enable logs (useful during development)
-await printer.enableLogging();
-
-// Disable logs (recommended for production)
-await printer.disableLogging();
-```
+Both managers are singletons. `dispose()` cancels queued jobs and detaches callbacks; only call it when the whole app is done printing. Use `reinitialize()` to use it again.
 
 ---
 
@@ -279,26 +297,25 @@ await printer.disableLogging();
 
 | Problem | Solution |
 |---|---|
-| **Printer not found** | Make sure Bluetooth is ON, Location is enabled, and permissions are granted |
-| **Discovery finds nothing** | The printer might already be paired — tap "Paired" to list bonded devices |
-| **Connection fails** | Zebra Bluetooth printers support only one active connection. Disconnect other devices first |
-| **Labels are misaligned** | Run `calibratePrinter(address, CalibrationType.gap)` |
-| **ZPL not printing correctly** | Preview your ZPL at [Labelary Viewer](http://labelary.com/viewer.html) |
-| **`safePrint` throws `PrintLockedException`** | A previous print is still in progress. Wait or call `forceReleasePrintLock()` |
+| `printerBusy` often | Increase `maxWait`; check no app holds a permanent connection (e.g. old `BluetoothManager.connect()`) |
+| `printerUnreachable` | Printer off, asleep or out of range; check the printer's Bluetooth is discoverable/connectable |
+| `notPaired` | Pair the device in Android settings, or use `insecure: true` (see above) |
+| Last part of a label missing | Increase `drainDelay` (e.g. 800 ms) |
+| `languageUnknown` | Printer in line_print mode: `! U1 setvar "device.languages" "hybrid_xml_zpl"` |
+| Labels misaligned | `calibratePrinter(mac, CalibrationType.gap)` |
+| ZPL not printing correctly | Preview at [Labelary Viewer](http://labelary.com/viewer.html) |
 
 ---
 
-## ZPL Resources
+## Migrating from 0.4.x
 
-- [Labelary Online Viewer](http://labelary.com/viewer.html) — test ZPL in the browser
-- [Zebra ZPL Reference](https://www.zebra.com/content/dam/zebra/manuals/printers/common/programming/zpl-zbi2-pm-en.pdf) — complete ZPL command reference
-- Always wrap ZPL with `^XA` … `^XZ`
-
----
-
-## Example App
-
-A full working example with UI, discovery, printing, batch printing, status checking, and printer info is available in the [`example/`](https://github.com/Sameetdmr/zebra_printer/tree/main/example) folder.
+- `safePrint` no longer throws `PrintLockedException`; jobs are queued.
+- Errors are `ZebraPrinterException` with a `code` (still `implements Exception`).
+- The printer link is closed right after each job (0.4.x kept it 2 s). For the old behaviour use `PrintOptions.dedicated`.
+- `connect()` only checks reachability and releases the link.
+- `getPrinterInfo` returns more fields; the native side returns a map now.
+- `calibratePrinter` no longer changes `wlan.country_code`.
+- `DiscoveryType` defaults to `bluetooth`.
 
 ---
 

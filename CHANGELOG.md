@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.6.0 - Bluetooth extensions 🧩
+
+- **Insecure (unbonded) Bluetooth links**: `PrintOptions(insecure: true)` uses `BluetoothConnectionInsecure`, so many devices can print without pairing each one (printer needs `bluetooth.minimum_security_mode` = 1).
+- **In-app print queue**: jobs for the same printer run FIFO instead of throwing `PrintLockedException`. New `pendingJobCount()`, `cancelPendingJobs()`.
+- **`printImage()`**: print PNG/JPG/BMP/WebP bytes via Link-OS `GraphicsUtil`; large images are down-sampled to avoid OOM.
+- **`sendCommand()`**: send raw SGD / tilde commands as-is.
+- **`getPrinterInfo()`**: native side returns a map; new `linkOsVersion` and `isProtectedMode` (Link-OS Protected Mode, SDK 2.17) fields. SGD values are unquoted.
+- **Fonts**:
+  - `uploadFont()` reads the Flutter asset in Dart (previously the native side looked in Android assets and usually failed).
+  - Unknown binary data is rejected with `unsupportedFormat` instead of being sent to the printer.
+  - `~DY` files are written as-is on non Link-OS printers (e.g. iMZ).
+  - The printer path stays `E:<NAME>` (unchanged).
+
+## 0.5.0 - Shared printer core 🤝
+
+Built for one Bluetooth printer shared by many devices: connect → print → release.
+
+- **Zebra Link-OS SDK 2.17.5585** (Android 17 RFCOMM `read()` fix, tested on Android 15–17).
+- **Short sessions**: the link is closed right after each job after a short drain delay (default 400 ms). The 2 s reuse window and the post-print "wait until ready" loop are now opt-in (`keepAlive`, `waitForCompletion`).
+- **Waiting for a busy printer**: exponential back-off with random jitter inside a total budget (default 30 s). New `PrintState.waiting` progress with `attempt`, `waited`, `nextRetryIn`; completed events report `holdTime`.
+- **`PrintOptions`**: per call or app-wide via `PrinterManager.defaultOptions`; presets `PrintOptions.shared` and `PrintOptions.dedicated`.
+- **Typed errors**: `ZebraPrinterException` with `ZebraPrinterErrorCode` (`printerBusy`, `printerUnreachable`, `notPaired`, `permissionDenied`, `bluetoothOff`, `paperOut`, `headOpen`, `ribbonOut`, `printerPaused`, ...). `ZebraPrinterStatus.errorCode` added.
+- **Status check on the same link** before printing (no second connection).
+- **Fixes**
+  - `safePrint` lock was acquired asynchronously (two quick calls both passed) and auto-released after 15 s in the middle of long batches.
+  - `calibratePrinter` changed `wlan.country_code` to "turkey" and wrapped SGD commands in `^XA…^XZ`, so they were ignored. Now sends `media.type`, `media.sense_mode`, `~JC`, `^JUS` as raw commands.
+  - Android 12+: `BluetoothDevice.getName()` inside the discovery receiver could crash the app without `BLUETOOTH_CONNECT`.
+  - `stopDiscovery()` did not stop anything; it now cancels Bluetooth discovery and completes `startDiscovery()` with the printers found so far.
+  - `disconnect()` closed the connection on the UI thread while a print could be using it.
+  - A failed status query after a label aborted the whole batch.
+  - Status / info / connect opened a second Bluetooth link while one was still open.
+  - MAC addresses are validated and normalised (`AC3FA4123456` and `AC-3F-...` accepted).
+- **Deprecated**: `BluetoothManager.connect()` / `disconnect()` (they hold the printer's only link), `PrintLockedException`, `forceReleasePrintLock()`, `CalibrationType.zplCommand`.
+- **Android**: `compileSdk 36`, AGP 8.7.3, Jackson 2.17.2; location permissions limited to Android 11 and lower.
+- **Repo / CI**: unit tests added; CI runs `flutter test` and builds the example APK (compiles the native code); generated / machine-specific files untracked.
+
 ## 0.4.3 - Improved README & GitHub CI 📚
 
 - Rewrote README with step-by-step getting started guide, real-world code examples, architecture overview, and a full troubleshooting table.
