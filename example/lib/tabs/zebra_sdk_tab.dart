@@ -1,5 +1,9 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:zebra_printer/zebra_printer.dart';
+
+import 'stress_test_page.dart';
 
 class ZebraSDKTab extends StatefulWidget {
   final PrinterManager printerManager;
@@ -16,6 +20,19 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
   bool _isDiscovering = false;
   String _status = 'Ready - Zebra Link-OS SDK';
   bool _isConnected = false;
+  bool _insecure = false;
+
+  PrintOptions get _options =>
+      PrintOptions.shared.copyWith(insecure: _insecure);
+
+  /// Readable text for errors, including the typed error code.
+  String _describe(Object e) {
+    if (e is ZebraPrinterException) {
+      final waited = e.waited != null ? ' after ${e.waited!.inSeconds}s' : '';
+      return '${e.code.name}$waited: ${e.message}';
+    }
+    return e.toString();
+  }
 
   @override
   void initState() {
@@ -24,15 +41,28 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
 
     // Listen to print progress
     widget.printerManager.onPrintProgress = (progress) {
-      if (mounted) {
-        setState(() {
-          _status = 'Printing: ${progress.percentage}% - ${progress.message}';
-          if (progress.isBatch) {
-            _status +=
-                ' (Label ${progress.currentLabel}/${progress.totalLabels})';
-          }
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        switch (progress.state) {
+          case PrintState.waiting:
+            _status =
+                'Printer busy, waiting... (attempt ${progress.attempt}, '
+                '${progress.waited?.inSeconds ?? 0}s)';
+          case PrintState.completed:
+            _status =
+                'Printed. Printer held for '
+                '${progress.holdTime?.inMilliseconds ?? '?'} ms';
+          case PrintState.error:
+            _status =
+                'Error: ${progress.errorCode?.name ?? ''} ${progress.errorMessage ?? ''}';
+          default:
+            _status = '${progress.state.name} ${progress.percentage}%';
+            if (progress.isBatch) {
+              _status +=
+                  ' (Label ${progress.currentLabel}/${progress.totalLabels})';
+            }
+        }
+      });
     };
   }
 
@@ -62,9 +92,9 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
         setState(() {
           _isConnected = info['isConnected'] ?? false;
           if (_isConnected) {
-            _status = 'Connected to ${info['address']} (${info['language']})';
-          } else {
-            _status = info['error'] ?? 'Disconnected';
+            _status = 'Printer ${info['address']} is reachable';
+          } else if (info['error'] != null) {
+            _status = '${info['errorCode'] ?? ''} ${info['error']}';
           }
         });
       }
@@ -83,7 +113,7 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
         type: DiscoveryType.bluetooth,
       );
 
-      // Eğer sonuç boşsa ve callback'ten de veri gelmediyse
+      // Nothing found (neither in the result nor through callbacks)
       if (result.isEmpty && _printers.isEmpty) {
         setState(() {
           _status =
@@ -156,15 +186,20 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
 
   Future<void> _connect(DiscoveredPrinter printer) async {
     setState(() {
-      _status = 'Connecting to ${printer.friendlyName}...';
+      _status = 'Checking ${printer.friendlyName}...';
       _selectedPrinter = printer;
     });
 
     try {
-      final connected = await widget.printerManager.connect(printer.address);
+      // Connects, verifies and releases the link again (printer is not held)
+      final connected = await widget.printerManager.connect(
+        printer.address,
+        options: _options,
+      );
       if (connected) {
         setState(() {
-          _status = 'Connected to ${printer.friendlyName}';
+          _isConnected = true;
+          _status = '${printer.friendlyName} is reachable';
         });
       } else {
         setState(() {
@@ -174,7 +209,7 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
       }
     } catch (e) {
       setState(() {
-        _status = 'Connection error: $e';
+        _status = 'Connection error: ${_describe(e)}';
         _selectedPrinter = null;
       });
     }
@@ -188,8 +223,9 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
       );
       if (disconnected) {
         setState(() {
-          _status = 'Disconnected';
+          _status = 'Deselected';
           _selectedPrinter = null;
+          _isConnected = false;
         });
       } else {
         setState(() {
@@ -211,15 +247,16 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
     });
 
     try {
-      // safePrint provides locking mechanism and progress updates
+      // Queued, waits for the printer if another device is printing
       await widget.printerManager.safePrint(
         _selectedPrinter!.address,
         '^XA^FO50,50^A0N,50,50^FDTest Label^FS^XZ',
+        options: _options,
       );
       // Progress callbacks will handle the 'successful' state text.
     } catch (e) {
       setState(() {
-        _status = 'Print error: $e';
+        _status = 'Print error: ${_describe(e)}';
       });
     }
   }
@@ -241,10 +278,11 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
       await widget.printerManager.safeBatchPrint(
         _selectedPrinter!.address,
         labels,
+        options: _options,
       );
     } catch (e) {
       setState(() {
-        _status = 'Batch print error: $e';
+        _status = 'Batch print error: ${_describe(e)}';
       });
     }
   }
@@ -255,8 +293,14 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
     try {
       final status = await widget.printerManager.getZebraPrinterStatus(
         _selectedPrinter!.address,
+        options: _options,
       );
       setState(() {
+        if (status.errorCode != null) {
+          _status =
+              'Status error: ${status.errorCode!.name} ${status.errorMessage}';
+          return;
+        }
         _status =
             'Status: ${status.statusMessagePlain}\n'
             'Ready: ${status.isReadyToPrint ? "Yes" : "No"}, Error: ${status.hasError ? "Yes" : "No"}\n'
@@ -275,6 +319,7 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
     try {
       PrinterInfo info = await widget.printerManager.getPrinterInfo(
         _selectedPrinter!.address,
+        options: _options,
       );
       if (mounted) {
         showDialog(
@@ -293,6 +338,13 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
                     _buildInfoRow('Firmware', info.firmware),
                     const SizedBox(height: 8),
                     _buildInfoRow('Language', info.language.toString()),
+                    const SizedBox(height: 8),
+                    _buildInfoRow('Link-OS', info.linkOsVersion ?? '-'),
+                    const SizedBox(height: 8),
+                    _buildInfoRow(
+                      'Protected',
+                      info.isProtectedMode?.toString() ?? '-',
+                    ),
                   ],
                 ),
                 actions: [
@@ -306,9 +358,57 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
       }
     } catch (e) {
       setState(() {
-        _status = 'Info error: $e';
+        _status = 'Info error: ${_describe(e)}';
       });
     }
+  }
+
+  /// Renders a small PNG in code and prints it with printImage().
+  Future<void> _printImage() async {
+    if (_selectedPrinter == null) return;
+    try {
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      const size = Size(300, 120);
+      canvas.drawRect(Offset.zero & size, Paint()..color = Colors.white);
+      canvas.drawRect(
+        const Rect.fromLTWH(4, 4, 292, 112),
+        Paint()
+          ..color = Colors.black
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 4,
+      );
+      canvas.drawCircle(
+        const Offset(60, 60),
+        36,
+        Paint()..color = Colors.black,
+      );
+      final image = await recorder.endRecording().toImage(300, 120);
+      final png = await image.toByteData(format: ui.ImageByteFormat.png);
+      await widget.printerManager.printImage(
+        _selectedPrinter!.address,
+        png!.buffer.asUint8List(),
+        x: 50,
+        y: 50,
+        options: _options,
+      );
+    } catch (e) {
+      setState(() => _status = 'Image print error: ${_describe(e)}');
+    }
+  }
+
+  void _openStressTest() {
+    if (_selectedPrinter == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder:
+            (_) => StressTestPage(
+              printerManager: widget.printerManager,
+              address: _selectedPrinter!.address,
+              options: _options,
+            ),
+      ),
+    );
   }
 
   Widget _buildInfoRow(String label, String value) {
@@ -345,8 +445,18 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Using Zebra Link-OS SDK',
+                'Shared printer mode: connect → print → release',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text('Insecure (no pairing)'),
+                  Switch(
+                    value: _insecure,
+                    onChanged: (v) => setState(() => _insecure = v),
+                  ),
+                ],
               ),
             ],
           ),
@@ -373,8 +483,8 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
               if (_isConnected) ...[
                 ElevatedButton.icon(
                   onPressed: _disconnect,
-                  icon: const Icon(Icons.link_off),
-                  label: const Text('Disconnect'),
+                  icon: const Icon(Icons.close),
+                  label: const Text('Deselect'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red.shade400,
                   ),
@@ -398,6 +508,16 @@ class _ZebraSDKTabState extends State<ZebraSDKTab> {
                   onPressed: _getPrinterInfo,
                   icon: const Icon(Icons.info),
                   label: const Text('Info'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _printImage,
+                  icon: const Icon(Icons.image),
+                  label: const Text('Print Image'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _openStressTest,
+                  icon: const Icon(Icons.speed),
+                  label: const Text('Stress Test'),
                 ),
               ],
             ],
