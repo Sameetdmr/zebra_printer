@@ -6,34 +6,44 @@
 [![Platform](https://img.shields.io/badge/platform-android-green.svg)](https://pub.dev/packages/zebra_printer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Print labels on Zebra printers over Bluetooth from Flutter**, using the official **Zebra Link-OS™ SDK**.
+**Bluetooth for Flutter, plus Zebra label printing with the official Zebra Link-OS™ SDK — in one package.**
 
-Unlike generic Bluetooth serial plugins, it talks to the printer through Zebra's own SDK: you get real printer status (paper out, head open, ribbon out…), batch printing, image printing and font upload. It is built for real-world setups where **one printer is shared by many handheld devices**: each print connects, sends and releases the printer immediately, and a busy printer is waited for instead of failing.
+The package has two independent parts. Use either one on its own, or both together:
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Sameetdmr/zebra_printer/main/doc/images/print-flow.png" alt="How a print works: queue, connect with retry, status check, send, drain, release" width="100%">
-</p>
+| | `BluetoothManager` | `PrinterManager` |
+|---|---|---|
+| **For** | Any Bluetooth Classic device | Zebra printers |
+| **Does** | Bluetooth on/off check, paired devices, scanning (streams), pairing, connection state | ZPL / image printing, real printer status, fonts, calibration |
+| **Built on** | Android Bluetooth API | Zebra Link-OS SDK 2.17.5585 |
+| **Needs a Zebra printer?** | No | Yes |
 
 ## Features
 
-- 🖨️ **Print ZPL labels**: single labels or batches in one Bluetooth session
-- 🖼️ **Print images**: PNG / JPG / BMP / WebP, converted by the Zebra SDK
-- 🤝 **Shared-printer friendly**: short connections, automatic waiting with back-off when another device is printing
-- 📊 **Real printer status**: paper out, head open, ribbon out, paused, head temperature
-- 🧯 **Typed errors**: `printerBusy`, `printerUnreachable`, `notPaired`, `paperOut`, …, so your UI can say exactly what to do
-- 📈 **Progress events**: connecting → waiting → sending → completed
-- 🔤 **Fonts, calibration, raw commands**: upload TTF / `~DY` fonts, calibrate media, send SGD commands
-- 🔍 **Discovery & pairing** of Zebra Bluetooth printers
+**Bluetooth (`BluetoothManager`)**
+
+- 📶 Check whether Bluetooth is on
+- 📋 List paired (bonded) devices
+- 🔍 Scan for nearby devices with live streams (`onDeviceFound`, `onScanStateChanged`)
+- 🤝 Pair and unpair devices
+- 🔗 Connect / disconnect with connection-state stream
+
+**Zebra printing (`PrinterManager`)**
+
+- 🖨️ Print ZPL labels, one at a time or in batches
+- 🖼️ Print images (PNG / JPG / BMP / WebP)
+- 📊 Real printer status: paper out, head open, ribbon out, paused
+- 🤝 Shared-printer friendly: connect → print → release; waits for a busy printer instead of failing
+- 🧯 Typed errors (`printerBusy`, `paperOut`, `notPaired`, …) and progress events
+- 🔤 Font upload, media calibration, raw SGD commands, Zebra printer discovery
 
 ## Contents
 
 - [Requirements](#requirements)
-- [Getting started](#getting-started)
-- [Common tasks](#common-tasks)
-- [Sharing one printer between many devices](#sharing-one-printer-between-many-devices)
-- [Options](#options)
-- [Error handling](#error-handling)
-- [More features](#more-features)
+- [Installation and permissions](#installation-and-permissions)
+- **Part 1 — Bluetooth:** [BluetoothManager](#part-1--bluetooth-bluetoothmanager)
+- **Part 2 — Zebra printing:** [PrinterManager](#part-2--zebra-printing-printermanager)
+  - [Getting started](#getting-started) · [Common tasks](#common-tasks) · [Sharing one printer](#sharing-one-printer-between-many-devices) · [Options](#options) · [Error handling](#error-handling) · [More features](#more-features)
+- [Using both together](#using-both-together)
 - [Troubleshooting](#troubleshooting)
 - [Example app](#example-app)
 
@@ -46,39 +56,131 @@ Unlike generic Bluetooth serial plugins, it talks to the printer through Zebra's
 | **Platform** | Android (iOS is planned, not available yet) |
 | **Android** | minSdk 21. Zebra tests SDK 2.17 on Android 15, 16 and 17 |
 | **Flutter** | 3.29 or newer (Dart 3.7.2+) |
-| **Connection** | Bluetooth Classic |
-| **Zebra SDK** | Link-OS Multiplatform SDK for Android, build 2.17.5585 (bundled) |
-| **Printers** | Link-OS printers: ZQ, ZD, ZT, ZR, ZE, QLn series. Older ZebraLink printers (e.g. iMZ) work with reduced functionality |
+| **Bluetooth** | Bluetooth Classic |
+| **Printers** (`PrinterManager`) | Link-OS printers: ZQ, ZD, ZT, ZR, ZE, QLn series. Older ZebraLink printers (e.g. iMZ) work with reduced functionality |
 
 ---
 
-## Getting started
-
-### 1. Install
+## Installation and permissions
 
 ```yaml
 dependencies:
-  zebra_printer: ^0.6.0
+  zebra_printer: ^0.6.1
 ```
 
-### 2. Ask for Bluetooth permissions
-
-The plugin already declares the Bluetooth permissions in its Android manifest. Your app still has to **ask the user at runtime**. With [permission_handler](https://pub.dev/packages/permission_handler):
+The plugin declares the Bluetooth permissions in its Android manifest. Your app still has to **ask the user at runtime** (both parts need this). With [permission_handler](https://pub.dev/packages/permission_handler):
 
 ```dart
 import 'package:permission_handler/permission_handler.dart';
 
 Future<bool> requestBluetoothPermissions() async {
   final statuses = await [
-    Permission.bluetoothScan,    // Android 12+
-    Permission.bluetoothConnect, // Android 12+
-    Permission.locationWhenInUse, // Android 11 and lower (discovery)
+    Permission.bluetoothScan,     // Android 12+
+    Permission.bluetoothConnect,  // Android 12+
+    Permission.locationWhenInUse, // Android 11 and lower (scanning)
   ].request();
   return statuses[Permission.bluetoothConnect]?.isGranted ?? false;
 }
 ```
 
-### 3. Find the printer and print
+---
+
+## Part 1 — Bluetooth (`BluetoothManager`)
+
+General Bluetooth Classic features. Works with any device — headsets, scanners, other printers — no Zebra printer needed.
+
+```dart
+import 'package:zebra_printer/zebra_printer.dart';
+
+final bt = BluetoothManager(); // singleton
+```
+
+### Is Bluetooth on?
+
+```dart
+if (!await bt.isBluetoothEnabled()) {
+  print('Please turn on Bluetooth');
+}
+```
+
+### Paired devices
+
+```dart
+final paired = await bt.getBondedDevices();
+for (final d in paired) {
+  print('${d.name ?? 'Unknown'}  ${d.address}  ${d.type.name}');
+}
+```
+
+### Scan for nearby devices
+
+New devices arrive through `onDeviceFound`. `bt.devices` starts with the paired devices and collects everything found during the scan.
+
+```dart
+final foundSub = bt.onDeviceFound.listen((device) {
+  print('Found: ${device.name} (${device.address})');
+});
+final scanSub = bt.onScanStateChanged.listen((state) {
+  print('Scan: ${state.name}'); // starting → scanning → idle
+});
+
+await bt.startDiscovery(); // runs until finished (~12 s) or stopped
+// ...
+await bt.stopDiscovery();
+
+// When you no longer need updates
+await foundSub.cancel();
+await scanSub.cancel();
+```
+
+`bt.onDiscoveryFinished` fires when the scan ends.
+
+### Pair and unpair
+
+```dart
+await bt.pairDevice('00:11:22:33:44:55');   // Android shows its pairing dialog
+await bt.unpairDevice('00:11:22:33:44:55');
+```
+
+### Connect and follow the connection state
+
+```dart
+bt.onConnectionStateChanged.listen((state) {
+  print('Connection: ${state.name}'); // connecting → connected → disconnected
+});
+
+await bt.connect('00:11:22:33:44:55'); // opens an RFCOMM (SPP) connection
+print(bt.isConnected);                // true once connected
+print(bt.connectedDevice?.name);
+
+await bt.disconnect();
+```
+
+`connect` keeps the connection open until `disconnect`. It tracks the connection state; it does not expose a data read/write API.
+
+> **Zebra printers:** don't `connect` to a printer here before printing. A printer accepts only one Bluetooth connection, so a connection held by `BluetoothManager` blocks `PrinterManager` and every other device. `PrinterManager` opens its own connection for each print.
+
+### The `BluetoothDevice` model
+
+| Field | Type | |
+|---|---|---|
+| `name` | `String?` | Device name (null if unknown or permission missing) |
+| `address` | `String` | MAC address |
+| `type` | `BluetoothDeviceType` | `classic`, `le`, `dual`, `unknown` |
+| `bondState` | `BluetoothBondState` | `none`, `bonding`, `bonded` |
+| `isConnected` | `bool` | Connected through `BluetoothManager` |
+
+---
+
+## Part 2 — Zebra printing (`PrinterManager`)
+
+Printing on Zebra printers through the official Zebra Link-OS SDK: real printer status, batch and image printing, fonts. Each print connects, sends and **releases the printer right away**, so several devices can share one printer.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Sameetdmr/zebra_printer/main/doc/images/print-flow.png" alt="How a print works: queue, connect with retry, status check, send, drain, release" width="100%">
+</p>
+
+### Getting started
 
 ```dart
 import 'package:zebra_printer/zebra_printer.dart';
@@ -86,7 +188,7 @@ import 'package:zebra_printer/zebra_printer.dart';
 final printer = PrinterManager(); // singleton
 
 Future<void> printHello() async {
-  // Find paired printers (or use startDiscovery() for nearby ones).
+  // Find paired printers (or use printer.startDiscovery() for nearby Zebra printers).
   // Store the MAC address once; you do not need to discover before every print.
   final paired = await printer.getPairedPrinters();
   final mac = paired.first.address; // e.g. "AC:3F:A4:12:34:56"
@@ -100,15 +202,13 @@ Future<void> printHello() async {
 }
 ```
 
-That's it. `safePrint` connects, checks the printer, sends the label and disconnects.
+`safePrint` connects, checks the printer, sends the label and disconnects.
 
 > **New to ZPL?** ZPL is Zebra's label language. `^XA` starts a label, `^FO` sets a position, `^A0` picks a font, `^FD…^FS` is the text and `^XZ` ends the label. Try your labels in the [Labelary online viewer](https://labelary.com/viewer.html).
 
----
+### Common tasks
 
-## Common tasks
-
-### Show progress
+**Show progress**
 
 ```dart
 printer.onPrintProgress = (p) {
@@ -125,7 +225,7 @@ printer.onPrintProgress = (p) {
 };
 ```
 
-### Print many labels at once
+**Print many labels at once**
 
 ```dart
 final labels = [
@@ -134,14 +234,14 @@ final labels = [
 await printer.safeBatchPrint(mac, labels); // one connection for all labels
 ```
 
-### Print an image
+**Print an image**
 
 ```dart
 final bytes = (await rootBundle.load('assets/logo.png')).buffer.asUint8List();
 await printer.printImage(mac, bytes, x: 20, y: 20, width: 300); // sizes in dots, 0 = original
 ```
 
-### Check the printer status
+**Check the printer status**
 
 ```dart
 final status = await printer.getZebraPrinterStatus(mac); // never throws
@@ -154,18 +254,16 @@ if (status.canPrint) {
 
 You don't need to check the status before printing: `safePrint` already does it on the same connection and fails with `paperOut`, `headOpen`, `ribbonOut` or `printerPaused`.
 
-### Read printer details
+**Read printer details**
 
 ```dart
 final info = await printer.getPrinterInfo(mac);
 print('${info.model} · S/N ${info.serialNumber} · ${info.firmware} · Link-OS ${info.linkOsVersion}');
 ```
 
----
+### Sharing one printer between many devices
 
-## Sharing one printer between many devices
-
-Most Zebra printers accept **one Bluetooth connection at a time**. If a device keeps the connection open, nobody else can print. This package never keeps it open by default:
+Most Zebra printers accept **one Bluetooth connection at a time**. If a device keeps the connection open, nobody else can print. `PrinterManager` never keeps it open by default:
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Sameetdmr/zebra_printer/main/doc/images/shared-printer.png" alt="Timeline: three devices take turns on one printer; waiting devices retry with back-off" width="100%">
@@ -181,13 +279,12 @@ Tips:
 
 - Store the printer's MAC address; don't run discovery before each print.
 - Don't poll `getZebraPrinterStatus` / `waitForPrinterReady` in a loop: every call is a connection.
+- Don't hold a `BluetoothManager.connect()` connection to the printer.
 - Measure with the [example app](#example-app)'s **Stress Test** on several devices at once, then tune `drainDelay` and `maxWait`.
 
----
+### Options
 
-## Options
-
-Every printer call accepts `options:`. Set `printer.defaultOptions` to change them for the whole app.
+Every `PrinterManager` call accepts `options:`. Set `printer.defaultOptions` to change them for the whole app.
 
 | Option | Default | What it does |
 |---|---|---|
@@ -208,11 +305,9 @@ await printer.safePrint(mac, zpl, options: const PrintOptions(maxWait: Duration(
 printer.defaultOptions = PrintOptions.dedicated;
 ```
 
----
+### Error handling
 
-## Error handling
-
-All printer calls throw `ZebraPrinterException` with a typed `code`:
+All `PrinterManager` printer calls throw `ZebraPrinterException` with a typed `code`:
 
 ```dart
 try {
@@ -241,17 +336,17 @@ try {
 
 > Bluetooth does not report "busy" directly. `printerBusy` vs `printerUnreachable` is inferred from how quickly the connection is refused. Treat it as a strong hint, not a certainty.
 
----
-
-## More features
+### More features
 
 <details>
-<summary><b>Discovery and pairing</b></summary>
+<summary><b>Zebra printer discovery and pairing</b></summary>
+
+`PrinterManager` discovery uses the Zebra SDK and returns Zebra printers only (for any Bluetooth device, use `BluetoothManager`).
 
 ```dart
 printer.onPrinterFound = (p) => print('${p.friendlyName} ${p.address}');
-final found = await printer.startDiscovery(); // Bluetooth
-await printer.stopDiscovery();                // completes startDiscovery with what was found so far
+final found = await printer.startDiscovery();
+await printer.stopDiscovery(); // completes startDiscovery with what was found so far
 
 final paired = await printer.getPairedPrinters();
 await printer.unpairPrinter(mac);
@@ -306,27 +401,46 @@ await printer.disableLogging(); // default
 ```
 </details>
 
+---
+
+## Using both together
+
+A typical printing app uses `BluetoothManager` for the phone's Bluetooth and `PrinterManager` for the printer:
+
+```dart
+final bt = BluetoothManager();
+final printer = PrinterManager();
+
+Future<void> printLabel(String mac, String zpl) async {
+  // 1. Bluetooth part: is Bluetooth on?
+  if (!await bt.isBluetoothEnabled()) {
+    throw Exception('Turn on Bluetooth');
+  }
+
+  // 2. Zebra part: print (connects, prints, releases the printer)
+  await printer.safePrint(mac, zpl);
+}
+```
+
+Pairing a new printer: scan and pair with `BluetoothManager` (or `printer.startDiscovery()` for Zebra printers only), then print with `PrinterManager`.
+
 <details>
 <summary><b>Architecture</b></summary>
 
 ```
 zebra_printer
-├── PrinterManager          ← use this for printing
-│   ├── PrintQueue          FIFO per printer inside the app
-│   └── Android
-│       ├── SharedConnectionManager  connect with back-off + jitter, drain, release
-│       └── Zebra Link-OS SDK        BluetoothConnection(Insecure), PrinterStatus,
-│                                    SGD, GraphicsUtil, FontUtil, BluetoothDiscoverer
-└── BluetoothManager        ← generic Bluetooth: adapter state, scan, pair
+├── BluetoothManager        ← generic Bluetooth (Android Bluetooth API)
+│     adapter state, bonded devices, scanning, pairing, connection
+│
+└── PrinterManager          ← Zebra printing (Zebra Link-OS SDK)
+      ├── PrintQueue                 FIFO per printer inside the app
+      └── Android
+          ├── SharedConnectionManager  connect with back-off + jitter, drain, release
+          └── Zebra Link-OS SDK        BluetoothConnection(Insecure), PrinterStatus,
+                                       SGD, GraphicsUtil, FontUtil, BluetoothDiscoverer
 ```
 
-`BluetoothManager.connect()` / `disconnect()` are deprecated: they keep a raw socket open, which blocks the printer for every other device.
-</details>
-
-<details>
-<summary><b>Lifecycle</b></summary>
-
-`PrinterManager` and `BluetoothManager` are singletons. `dispose()` cancels queued jobs and clears callbacks: call it only when the whole app is done printing, and `reinitialize()` to use it again.
+Both managers are singletons. `dispose()` releases resources and clears callbacks: call it only when the whole app is done with them, and `reinitialize()` to use them again.
 </details>
 
 ---
@@ -335,13 +449,14 @@ zebra_printer
 
 | Problem | Try this |
 |---|---|
-| `printerBusy` happens often | Increase `maxWait`. Make sure no app keeps a permanent connection (e.g. the deprecated `BluetoothManager.connect()`) |
+| Scan finds nothing | Bluetooth and location on, permissions granted. Paired devices are listed by `getBondedDevices()` / `getPairedPrinters()` |
+| `name` is null | `BLUETOOTH_CONNECT` permission not granted (Android 12+) |
+| `printerBusy` happens often | Increase `maxWait`. Make sure no app keeps a connection to the printer (e.g. `BluetoothManager.connect()`) |
 | `printerUnreachable` | Printer is off, asleep or out of range |
-| `notPaired` | Pair in Android Bluetooth settings, or use `insecure: true` |
+| `notPaired` | Pair in Android Bluetooth settings (or `bt.pairDevice`), or use `insecure: true` |
 | End of the label is missing | Increase `drainDelay` (e.g. 800 ms) |
 | `languageUnknown` | Printer is in line-print mode: `! U1 setvar "device.languages" "hybrid_xml_zpl"` |
 | Labels are misaligned | `calibratePrinter(mac, CalibrationType.gap)` |
-| Discovery finds nothing | Bluetooth and location on, permissions granted. Already paired printers show up in `getPairedPrinters()` |
 | ZPL prints wrong | Preview it in the [Labelary viewer](https://labelary.com/viewer.html) |
 
 Upgrading from 0.4.x? See [MIGRATION.md](https://github.com/Sameetdmr/zebra_printer/blob/main/MIGRATION.md).
@@ -350,11 +465,11 @@ Upgrading from 0.4.x? See [MIGRATION.md](https://github.com/Sameetdmr/zebra_prin
 
 ## Example app
 
-The [`example/`](https://github.com/Sameetdmr/zebra_printer/tree/main/example) app shows discovery, printing, batch and image printing, status, printer info and a **Stress Test** screen for measuring a shared printer with several devices.
+The [`example/`](https://github.com/Sameetdmr/zebra_printer/tree/main/example) app has two tabs: **Bluetooth** (scan, paired devices) and **Zebra SDK** (discovery, printing, batch and image printing, status, printer info and a **Stress Test** screen for measuring a shared printer with several devices).
 
 ## Contributing
 
-Issues and pull requests are welcome on [GitHub](https://github.com/Sameetdmr/zebra_printer/issues). Please include your printer model, Android version and logs (`printer.enableLogging()`).
+Issues and pull requests are welcome on [GitHub](https://github.com/Sameetdmr/zebra_printer/issues). Please include your printer model (if any), Android version and logs (`printer.enableLogging()`).
 
 ## License
 

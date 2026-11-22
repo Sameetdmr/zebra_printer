@@ -1,6 +1,6 @@
 name: zebra_printer
-description: Zebra label printing over Bluetooth with the Zebra Link-OS SDK, built for shared printers - connect, print, release - with busy-printer back-off and typed errors.
-version: 0.6.0
+description: Bluetooth for Flutter (scan, pair, connect) plus Zebra label printing with the official Link-OS SDK, built for printers shared by many devices.
+version: 0.6.1
 homepage: https://github.com/Sameetdmr/zebra_printer
 repository: https://github.com/Sameetdmr/zebra_printer
 issue_tracker: https://github.com/Sameetdmr/zebra_printer/issues

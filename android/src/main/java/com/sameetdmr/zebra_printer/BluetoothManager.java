@@ -33,11 +33,10 @@ import io.flutter.plugin.common.MethodChannel;
 /**
  * Generic Bluetooth helpers: adapter state, bonded devices, discovery and pairing.
  *
- * <p>Note: {@code connect}/{@code disconnect} open a raw RFCOMM socket and keep it
- * open. Zebra printers accept a single Bluetooth link, so a socket held here
- * blocks every other device (and this app's own print jobs). They are kept for
- * backwards compatibility and are deprecated on the Dart side; printing goes
- * through {@link PrinterManager}, which connects only for the duration of a job.
+ * <p>Usable on its own for any Bluetooth Classic device. Note: {@code connect}
+ * keeps an RFCOMM socket open until {@code disconnect}. Zebra printers accept a
+ * single Bluetooth link, so do not hold a connection here to a printer that
+ * {@link PrinterManager} prints to; PrinterManager connects per job.
  */
 public class BluetoothManager {
     private static final String TAG = "BluetoothManager";

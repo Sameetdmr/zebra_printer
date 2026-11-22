@@ -42,7 +42,7 @@ printer.defaultOptions = PrintOptions.dedicated; // keepAlive: 2 s
 | 0.4.x | 0.5 / 0.6 |
 |---|---|
 | `connect()` "maintains the connection" | Checks the printer is reachable and releases the connection |
-| `BluetoothManager.connect()` / `disconnect()` | Deprecated: they keep a raw socket open and block the printer |
+| `BluetoothManager.connect()` / `disconnect()` | Unchanged. Don't hold this connection to a printer that `PrinterManager` prints to |
 | `calibratePrinter()` also set `wlan.country_code` to "turkey" | Only sets the media type and sensor mode, calibrates and saves |
 | `CalibrationType.zplCommand` | Deprecated, use `command` |
 | `startDiscovery()` default `DiscoveryType.both` | Default `DiscoveryType.bluetooth` (`both` runs Bluetooth discovery as before) |
