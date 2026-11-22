@@ -8,7 +8,7 @@ documentation: https://github.com/Sameetdmr/zebra_printer/blob/main/README.md
 
 environment:
   sdk: ^3.7.2
-  flutter: ">=3.7.0"
+  flutter: ">=3.29.0"
 
 dependencies:
   flutter:
@@ -25,6 +25,12 @@ flutter:
       android:
         package: com.sameetdmr.zebra_printer
         pluginClass: ZebraPrinterPlugin
+
+screenshots:
+  - description: How a print works - connect, check, send and release the printer
+    path: doc/images/print-flow.png
+  - description: One printer shared by many devices that take turns
+    path: doc/images/shared-printer.png
 
 topics:
   - zebra
