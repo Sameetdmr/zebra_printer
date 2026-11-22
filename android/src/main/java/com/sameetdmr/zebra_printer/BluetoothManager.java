@@ -15,7 +15,6 @@ import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
-import androidx.core.app.ActivityCompat;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -32,7 +31,13 @@ import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 
 /**
- * Bluetooth işlemlerini yöneten sınıf
+ * Generic Bluetooth helpers: adapter state, bonded devices, discovery and pairing.
+ *
+ * <p>Note: {@code connect}/{@code disconnect} open a raw RFCOMM socket and keep it
+ * open. Zebra printers accept a single Bluetooth link, so a socket held here
+ * blocks every other device (and this app's own print jobs). They are kept for
+ * backwards compatibility and are deprecated on the Dart side; printing goes
+ * through {@link PrinterManager}, which connects only for the duration of a job.
  */
 public class BluetoothManager {
     private static final String TAG = "BluetoothManager";
@@ -53,13 +58,13 @@ public class BluetoothManager {
     private final ExecutorService executorService;
     private BroadcastReceiver discoveryReceiver;
     private BroadcastReceiver connectionReceiver;
-    private boolean isDiscovering = false;
+    private volatile boolean isDiscovering = false;
     private MethodChannel methodChannel;
     
-    // Bağlantı değişkenleri
-    private BluetoothSocket bluetoothSocket;
-    private BluetoothDevice connectedDevice;
-    private int connectionState = CONNECTION_STATE_DISCONNECTED;
+    // Touched from the main thread, the executor and broadcast receivers
+    private volatile BluetoothSocket bluetoothSocket;
+    private volatile BluetoothDevice connectedDevice;
+    private volatile int connectionState = CONNECTION_STATE_DISCONNECTED;
 
     /**
      * Constructor
@@ -125,11 +130,50 @@ public class BluetoothManager {
     }
 
     /**
+     * Builds the device map sent to Dart.
+     * BluetoothDevice#getName() throws SecurityException on Android 12+ when
+     * BLUETOOTH_CONNECT is missing. Inside a BroadcastReceiver that would crash
+     * the host app, so every accessor is guarded here.
+     */
+    @SuppressWarnings("MissingPermission")
+    private Map<String, Object> deviceToMap(BluetoothDevice device) {
+        Map<String, Object> deviceMap = new HashMap<>();
+        String name = null;
+        int type = BluetoothDevice.DEVICE_TYPE_UNKNOWN;
+        int bondState = BluetoothDevice.BOND_NONE;
+        try {
+            name = device.getName();
+            type = device.getType();
+            bondState = device.getBondState();
+        } catch (SecurityException e) {
+            Log.w(TAG, "BLUETOOTH_CONNECT permission missing, device details unavailable");
+        }
+        deviceMap.put("name", name);
+        deviceMap.put("address", device.getAddress());
+        deviceMap.put("type", type);
+        deviceMap.put("bondState", bondState);
+
+        BluetoothDevice current = connectedDevice;
+        deviceMap.put("isConnected", current != null
+                && device.getAddress().equals(current.getAddress())
+                && connectionState == CONNECTION_STATE_CONNECTED);
+        return deviceMap;
+    }
+
+    private boolean hasPermission(String permission) {
+        return context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /**
      * Bluetooth'un açık olup olmadığını kontrol eder
      * @return Bluetooth açıksa true, değilse false
      */
     private boolean isBluetoothEnabled() {
-        return bluetoothAdapter != null && bluetoothAdapter.isEnabled();
+        try {
+            return bluetoothAdapter != null && bluetoothAdapter.isEnabled();
+        } catch (SecurityException e) {
+            return false;
+        }
     }
 
     /**
@@ -143,22 +187,16 @@ public class BluetoothManager {
             return devicesList;
         }
 
-        Set<BluetoothDevice> pairedDevices = bluetoothAdapter.getBondedDevices();
-        if (pairedDevices.size() > 0) {
+        Set<BluetoothDevice> pairedDevices;
+        try {
+            pairedDevices = bluetoothAdapter.getBondedDevices();
+        } catch (SecurityException e) {
+            Log.w(TAG, "BLUETOOTH_CONNECT permission missing, cannot list bonded devices");
+            return devicesList;
+        }
+        if (pairedDevices != null) {
             for (BluetoothDevice device : pairedDevices) {
-                Map<String, Object> deviceMap = new HashMap<>();
-                deviceMap.put("name", device.getName());
-                deviceMap.put("address", device.getAddress());
-                deviceMap.put("type", device.getType());
-                deviceMap.put("bondState", device.getBondState());
-                
-                // Bağlı cihaz ise isConnected true olsun
-                boolean isConnected = connectedDevice != null && 
-                                     device.getAddress().equals(connectedDevice.getAddress()) &&
-                                     connectionState == CONNECTION_STATE_CONNECTED;
-                deviceMap.put("isConnected", isConnected);
-                
-                devicesList.add(deviceMap);
+                devicesList.add(deviceToMap(device));
             }
         }
 
@@ -171,26 +209,28 @@ public class BluetoothManager {
      */
     private void startDiscovery(final MethodChannel.Result result) {
         if (bluetoothAdapter == null) {
-            result.error("BLUETOOTH_UNAVAILABLE", "Bluetooth adapter bulunamadı", null);
+            result.error("BLUETOOTH_UNAVAILABLE", "Bluetooth adapter not found", null);
             return;
         }
 
         // ✅ Android 12+ (API 31+) için BLUETOOTH_SCAN permission kontrolü
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) 
-                != PackageManager.PERMISSION_GRANTED) {
+            if (!hasPermission(Manifest.permission.BLUETOOTH_SCAN)) {
                 Log.e(TAG, "BLUETOOTH_SCAN permission not granted");
                 result.error("PERMISSION_DENIED", 
-                    "BLUETOOTH_SCAN izni gerekli. Lütfen uygulama ayarlarından Bluetooth iznini verin.", 
+                    "BLUETOOTH_SCAN permission is required.", 
                     null);
                 return;
             }
         }
 
-        // ✅ Önceki discovery'yi iptal et
-        if (bluetoothAdapter.isDiscovering()) {
-            Log.d(TAG, "Canceling previous discovery");
-            bluetoothAdapter.cancelDiscovery();
+        // Cancel a previous discovery
+        try {
+            if (bluetoothAdapter.isDiscovering()) {
+                bluetoothAdapter.cancelDiscovery();
+            }
+        } catch (SecurityException e) {
+            Log.w(TAG, "cancelDiscovery not permitted: " + e.getMessage());
         }
 
         // ✅ Önceki receiver'ı temizle
@@ -213,17 +253,7 @@ public class BluetoothManager {
                 if (BluetoothDevice.ACTION_FOUND.equals(action)) {
                     BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
                     if (device != null) {
-                        Map<String, Object> deviceMap = new HashMap<>();
-                        deviceMap.put("name", device.getName());
-                        deviceMap.put("address", device.getAddress());
-                        deviceMap.put("type", device.getType());
-                        deviceMap.put("bondState", device.getBondState());
-                        
-                        // Bağlı cihaz ise isConnected true olsun
-                        boolean isConnected = connectedDevice != null && 
-                                             device.getAddress().equals(connectedDevice.getAddress()) &&
-                                             connectionState == CONNECTION_STATE_CONNECTED;
-                        deviceMap.put("isConnected", isConnected);
+                        Map<String, Object> deviceMap = deviceToMap(device);
 
                         // Flutter'a cihaz bulundu bildirimi gönder
                         mainHandler.post(() -> {
@@ -248,6 +278,9 @@ public class BluetoothManager {
                     } catch (Exception e) {
                         Log.e(TAG, "Receiver unregister error: " + e.getMessage());
                     }
+                    if (discoveryReceiver == this) {
+                        discoveryReceiver = null;
+                    }
                 }
             }
         };
@@ -263,12 +296,19 @@ public class BluetoothManager {
             Log.d(TAG, "Receiver registered successfully");
         } catch (Exception e) {
             Log.e(TAG, "Failed to register receiver: " + e.getMessage());
-            result.error("RECEIVER_REGISTRATION_FAILED", "BroadcastReceiver kaydedilemedi: " + e.getMessage(), null);
+            result.error("RECEIVER_REGISTRATION_FAILED", "Could not register BroadcastReceiver: " + e.getMessage(), null);
             return;
         }
 
         // Keşfi başlat
-        if (bluetoothAdapter.startDiscovery()) {
+        boolean started;
+        try {
+            started = bluetoothAdapter.startDiscovery();
+        } catch (SecurityException e) {
+            Log.e(TAG, "startDiscovery not permitted: " + e.getMessage());
+            started = false;
+        }
+        if (started) {
             isDiscovering = true;
             Log.d(TAG, "Discovery started successfully");
             result.success(true);
@@ -281,7 +321,7 @@ public class BluetoothManager {
                 Log.w(TAG, "Failed to unregister receiver after failed start: " + e.getMessage());
             }
             discoveryReceiver = null;
-            result.error("DISCOVERY_FAILED", "Cihaz keşfi başlatılamadı. Bluetooth izinlerini kontrol edin.", null);
+            result.error("DISCOVERY_FAILED", "Could not start discovery. Check Bluetooth permissions.", null);
         }
     }
 
@@ -290,8 +330,12 @@ public class BluetoothManager {
      * @param result Sonuç callback'i (null olabilir)
      */
     private void stopDiscovery(final MethodChannel.Result result) {
-        if (bluetoothAdapter != null && bluetoothAdapter.isDiscovering()) {
-            bluetoothAdapter.cancelDiscovery();
+        try {
+            if (bluetoothAdapter != null && bluetoothAdapter.isDiscovering()) {
+                bluetoothAdapter.cancelDiscovery();
+            }
+        } catch (SecurityException e) {
+            Log.w(TAG, "cancelDiscovery not permitted: " + e.getMessage());
         }
 
         isDiscovering = false;
@@ -320,7 +364,7 @@ public class BluetoothManager {
      */
     private void pairDevice(String address, final MethodChannel.Result result) {
         if (bluetoothAdapter == null) {
-            result.error("BLUETOOTH_UNAVAILABLE", "Bluetooth adapter bulunamadı", null);
+            result.error("BLUETOOTH_UNAVAILABLE", "Bluetooth adapter not found", null);
             return;
         }
 
@@ -332,11 +376,14 @@ public class BluetoothManager {
             }
 
             // Eşleşme isteği gönder (Android 4.4+ sistemlerde kullanıcı onayı gerekebilir)
-            device.getClass().getMethod("createBond").invoke(device);
+            if (!device.createBond()) {
+                result.error("PAIR_FAILED", "Pairing request could not be started", null);
+                return;
+            }
             result.success(true);
         } catch (Exception e) {
             Log.e(TAG, "Pair error: " + e.getMessage());
-            result.error("PAIR_FAILED", "Cihazla eşleşme başarısız: " + e.getMessage(), null);
+            result.error("PAIR_FAILED", "Pairing failed: " + e.getMessage(), null);
         }
     }
 
@@ -347,7 +394,7 @@ public class BluetoothManager {
      */
     private void unpairDevice(String address, final MethodChannel.Result result) {
         if (bluetoothAdapter == null) {
-            result.error("BLUETOOTH_UNAVAILABLE", "Bluetooth adapter bulunamadı", null);
+            result.error("BLUETOOTH_UNAVAILABLE", "Bluetooth adapter not found", null);
             return;
         }
 
@@ -362,7 +409,7 @@ public class BluetoothManager {
             result.success(true);
         } catch (Exception e) {
             Log.e(TAG, "Unpair error: " + e.getMessage());
-            result.error("UNPAIR_FAILED", "Cihazla eşleşme kaldırılamadı: " + e.getMessage(), null);
+            result.error("UNPAIR_FAILED", "Unpairing failed: " + e.getMessage(), null);
         }
     }
     
@@ -373,19 +420,23 @@ public class BluetoothManager {
      */
     private void connect(String address, final MethodChannel.Result result) {
         if (bluetoothAdapter == null) {
-            result.error("BLUETOOTH_UNAVAILABLE", "Bluetooth adapter bulunamadı", null);
+            result.error("BLUETOOTH_UNAVAILABLE", "Bluetooth adapter not found", null);
             return;
         }
         
         // Zaten bağlıysa veya bağlanıyorsa hata döndür
         if (connectionState == CONNECTION_STATE_CONNECTED || connectionState == CONNECTION_STATE_CONNECTING) {
-            result.error("ALREADY_CONNECTING", "Zaten bir cihaza bağlı veya bağlanıyor", null);
+            result.error("ALREADY_CONNECTING", "Already connected or connecting", null);
             return;
         }
         
         // Önce keşif işlemini durdur (bağlantıyı engelleyebilir)
-        if (bluetoothAdapter.isDiscovering()) {
-            bluetoothAdapter.cancelDiscovery();
+        try {
+            if (bluetoothAdapter.isDiscovering()) {
+                bluetoothAdapter.cancelDiscovery();
+            }
+        } catch (SecurityException e) {
+            Log.w(TAG, "cancelDiscovery not permitted: " + e.getMessage());
         }
         
         // Bağlantı durumunu güncelle
@@ -408,7 +459,7 @@ public class BluetoothManager {
                 // Sonucu ana thread'de döndür
                 mainHandler.post(() -> result.success(true));
                 
-            } catch (IOException e) {
+            } catch (IOException | SecurityException e) {
                 Log.e(TAG, "Connection error: " + e.getMessage());
                 
                 // Bağlantı hatası
@@ -417,7 +468,7 @@ public class BluetoothManager {
                 updateConnectionState(CONNECTION_STATE_ERROR);
                 
                 // Sonucu ana thread'de döndür
-                mainHandler.post(() -> result.error("CONNECTION_FAILED", "Bağlantı hatası: " + e.getMessage(), null));
+                mainHandler.post(() -> result.error("CONNECTION_FAILED", "Connection error: " + e.getMessage(), null));
             }
         });
     }
@@ -430,7 +481,7 @@ public class BluetoothManager {
         // Bağlı değilse hata döndür
         if (connectionState != CONNECTION_STATE_CONNECTED) {
             if (result != null) {
-                result.error("NOT_CONNECTED", "Bağlı bir cihaz yok", null);
+                result.error("NOT_CONNECTED", "No device connected", null);
             }
             return;
         }
@@ -473,6 +524,8 @@ public class BluetoothManager {
     private void updateConnectionState(int state) {
         if (connectionState != state) {
             connectionState = state;
+            // Capture now: the device may be cleared before the posted runnable runs
+            final BluetoothDevice device = connectedDevice;
             
             // Flutter'a bağlantı durumu değişikliğini bildir
             mainHandler.post(() -> {
@@ -480,8 +533,8 @@ public class BluetoothManager {
                     Map<String, Object> stateMap = new HashMap<>();
                     stateMap.put("state", state);
                     
-                    if (connectedDevice != null) {
-                        stateMap.put("address", connectedDevice.getAddress());
+                    if (device != null) {
+                        stateMap.put("address", device.getAddress());
                     }
                     
                     methodChannel.invokeMethod("onConnectionStateChanged", stateMap);
@@ -511,9 +564,9 @@ public class BluetoothManager {
                     }
                 } else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
                     if (connectedDevice != null && device.getAddress().equals(connectedDevice.getAddress())) {
-                        connectedDevice = null;
                         closeSocket();
                         updateConnectionState(CONNECTION_STATE_DISCONNECTED);
+                        connectedDevice = null;
                     }
                 }
             }

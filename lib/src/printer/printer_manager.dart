@@ -1,321 +1,31 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:zebra_printer/src/config/zebra_config.dart';
 import 'package:zebra_printer/src/models/bluetooth_device.dart';
 import 'package:zebra_printer/src/models/calibration_type.dart';
+import 'package:zebra_printer/src/models/discovered_printer.dart';
 import 'package:zebra_printer/src/models/discovery_type.dart';
+import 'package:zebra_printer/src/models/print_options.dart';
+import 'package:zebra_printer/src/models/print_progress.dart';
 import 'package:zebra_printer/src/models/printer_info.dart';
 import 'package:zebra_printer/src/models/printer_status.dart';
+import 'package:zebra_printer/src/models/zebra_printer_exception.dart';
+import 'package:zebra_printer/src/printer/print_queue.dart';
 
-// ============================================================================
-// PRINT LOCK EXCEPTION
-// ============================================================================
-
-/// Exception thrown when a print operation is blocked because another
-/// print operation is already in progress on a different printer.
+/// Zebra printer operations over Bluetooth (Zebra Link-OS SDK).
 ///
-/// This prevents conflicts when using multiple printers with fast scanning.
-class PrintLockedException implements Exception {
-  /// Error message
-  final String message;
-
-  /// Address of the printer that is currently printing
-  final String currentPrintingAddress;
-
-  /// Address of the printer that was requested
-  final String requestedAddress;
-
-  PrintLockedException(
-    this.message, {
-    required this.currentPrintingAddress,
-    required this.requestedAddress,
-  });
-
-  @override
-  String toString() =>
-      'PrintLockedException: $message '
-      '(current: $currentPrintingAddress, requested: $requestedAddress)';
-
-  /// Returns user-friendly error message
-  String get userMessage =>
-      'Printer "$currentPrintingAddress" is currently printing. '
-      'Please wait for the operation to complete.';
-}
-
-/// Enum for print state
-enum PrintState {
-  /// Print job is idle
-  idle,
-
-  /// Connecting to printer
-  connecting,
-
-  /// Sending data to printer
-  sending,
-
-  /// Printer is actively printing
-  printing,
-
-  /// Verifying print completion
-  verifying,
-
-  /// Printer is processing data
-  processing,
-
-  /// Print completed successfully
-  completed,
-
-  /// Print failed with error
-  error;
-
-  /// Creates PrintState from native string
-  static PrintState fromString(String? value) {
-    switch (value?.toLowerCase()) {
-      case 'idle':
-        return PrintState.idle;
-      case 'connecting':
-        return PrintState.connecting;
-      case 'sending':
-        return PrintState.sending;
-      case 'printing':
-        return PrintState.printing;
-      case 'verifying':
-        return PrintState.verifying;
-      case 'processing':
-        return PrintState.processing;
-      case 'completed':
-        return PrintState.completed;
-      case 'error':
-        return PrintState.error;
-      default:
-        return PrintState.idle;
-    }
-  }
-}
-
-/// Print progress information with comprehensive printer status
-class PrintProgress {
-  /// Current print state
-  final PrintState state;
-
-  /// Progress percentage (0-100)
-  final int percentage;
-
-  /// Optional message describing current state
-  final String? message;
-
-  /// Error message if state is error
-  final String? errorMessage;
-
-  /// Printer address
-  final String? address;
-
-  /// Timestamp of this progress update
-  final DateTime timestamp;
-
-  /// Is this a batch print progress?
-  final bool isBatch;
-
-  /// Current label number (for batch printing)
-  final int? currentLabel;
-
-  /// Total number of labels (for batch printing)
-  final int? totalLabels;
-
-  // ==================== PRINTER STATUS (from Zebra SDK) ====================
-
-  /// Is paper out? (from SDK polling)
-  final bool? isPaperOut;
-
-  /// Is head open? (from SDK polling)
-  final bool? isHeadOpen;
-
-  /// Is head cold? (from SDK polling)
-  final bool? isHeadCold;
-
-  /// Is head too hot? (from SDK polling)
-  final bool? isHeadTooHot;
-
-  /// Is ribbon out? (from SDK polling)
-  final bool? isRibbonOut;
-
-  /// Labels remaining in current batch (from SDK)
-  final int? labelsRemainingInBatch;
-
-  PrintProgress({
-    required this.state,
-    required this.percentage,
-    this.message,
-    this.errorMessage,
-    this.address,
-    this.isBatch = false,
-    this.currentLabel,
-    this.totalLabels,
-    this.isPaperOut,
-    this.isHeadOpen,
-    this.isHeadCold,
-    this.isHeadTooHot,
-    this.isRibbonOut,
-    this.labelsRemainingInBatch,
-    DateTime? timestamp,
-  }) : timestamp = timestamp ?? DateTime.now();
-
-  /// Creates PrintProgress from native callback data
-  factory PrintProgress.fromNative(Map<dynamic, dynamic> data) {
-    return PrintProgress(
-      state: PrintState.fromString(data['state'] as String?),
-      percentage: (data['percentage'] as int?) ?? 0,
-      message: data['message'] as String?,
-      errorMessage: data['errorMessage'] as String?,
-      address: data['address'] as String?,
-      isBatch: (data['isBatch'] as bool?) ?? false,
-      currentLabel: data['currentLabel'] as int?,
-      totalLabels: data['totalLabels'] as int?,
-      // Printer status from SDK polling
-      isPaperOut: data['isPaperOut'] as bool?,
-      isHeadOpen: data['isHeadOpen'] as bool?,
-      isHeadCold: data['isHeadCold'] as bool?,
-      isHeadTooHot: data['isHeadTooHot'] as bool?,
-      isRibbonOut: data['isRibbonOut'] as bool?,
-      labelsRemainingInBatch: data['labelsRemainingInBatch'] as int?,
-      timestamp:
-          data['timestamp'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(data['timestamp'] as int)
-              : DateTime.now(),
-    );
-  }
-
-  /// Creates idle progress
-  factory PrintProgress.idle() =>
-      PrintProgress(state: PrintState.idle, percentage: 0, message: 'Ready');
-
-  /// Creates connecting progress
-  factory PrintProgress.connecting() => PrintProgress(
-    state: PrintState.connecting,
-    percentage: 10,
-    message: 'Connecting to printer...',
-  );
-
-  /// Creates sending progress
-  factory PrintProgress.sending({int percentage = 30}) => PrintProgress(
-    state: PrintState.sending,
-    percentage: percentage,
-    message: 'Sending data to printer...',
-  );
-
-  /// Creates printing progress
-  factory PrintProgress.printing({int percentage = 50}) => PrintProgress(
-    state: PrintState.printing,
-    percentage: percentage,
-    message: 'Printing...',
-  );
-
-  /// Creates processing progress
-  factory PrintProgress.processing({int percentage = 70}) => PrintProgress(
-    state: PrintState.processing,
-    percentage: percentage,
-    message: 'Printer is processing...',
-  );
-
-  /// Creates completed progress
-  factory PrintProgress.completed() => PrintProgress(
-    state: PrintState.completed,
-    percentage: 100,
-    message: 'Print completed successfully',
-  );
-
-  /// Creates error progress
-  factory PrintProgress.error(String error) => PrintProgress(
-    state: PrintState.error,
-    percentage: 0,
-    errorMessage: error,
-  );
-
-  // ==================== HELPER GETTERS ====================
-
-  /// Is print in progress?
-  bool get isInProgress =>
-      state == PrintState.connecting ||
-      state == PrintState.sending ||
-      state == PrintState.printing ||
-      state == PrintState.verifying ||
-      state == PrintState.processing;
-
-  /// Is print completed?
-  bool get isCompleted => state == PrintState.completed;
-
-  /// Is there an error?
-  bool get hasError => state == PrintState.error;
-
-  /// Does printer have any warning/error status?
-  bool get hasPrinterIssue =>
-      (isPaperOut ?? false) ||
-      (isHeadOpen ?? false) ||
-      (isHeadCold ?? false) ||
-      (isHeadTooHot ?? false) ||
-      (isRibbonOut ?? false);
-
-  /// Progress for batch printing (e.g., "3/10")
-  String get batchProgressText {
-    if (!isBatch || currentLabel == null || totalLabels == null) return '';
-    return '$currentLabel/$totalLabels';
-  }
-
-  /// Returns printer status warning message (if any)
-  String? get printerWarning {
-    if (isPaperOut == true) return 'Paper out!';
-    if (isHeadOpen == true) return 'Print head open!';
-    if (isRibbonOut == true) return 'Ribbon out!';
-    if (isHeadCold == true) return 'Print head warming up...';
-    if (isHeadTooHot == true) return 'Print head cooling down...';
-    return null;
-  }
-
-  @override
-  String toString() {
-    final buffer = StringBuffer(
-      'PrintProgress{state: $state, percentage: $percentage%',
-    );
-    if (isBatch) {
-      buffer.write(', label: $batchProgressText');
-    }
-    if (message != null) {
-      buffer.write(', message: $message');
-    }
-    if (hasPrinterIssue) {
-      buffer.write(', warning: $printerWarning');
-    }
-    buffer.write('}');
-    return buffer.toString();
-  }
-}
-
-/// Discovered Zebra Printer model
-class DiscoveredPrinter {
-  final String type; // "bluetooth" or "network"
-  final String address;
-  final String friendlyName;
-
-  DiscoveredPrinter({
-    required this.type,
-    required this.address,
-    required this.friendlyName,
-  });
-
-  factory DiscoveredPrinter.fromMap(Map<dynamic, dynamic> map) {
-    return DiscoveredPrinter(
-      type: map['type'] as String? ?? '',
-      address: map['address'] as String? ?? '',
-      friendlyName: map['friendlyName'] as String? ?? '',
-    );
-  }
-
-  @override
-  String toString() {
-    return 'DiscoveredPrinter{type: $type, address: $address, friendlyName: $friendlyName}';
-  }
-}
-
-/// Class for communicating with Zebra printers using Link-OS SDK
+/// Designed for a **shared printer**: every call connects, does its work and
+/// releases the Bluetooth link right away, so other devices can use the
+/// printer. If another device is printing, the call waits (back-off + jitter)
+/// up to [PrintOptions.maxWait], reporting [PrintState.waiting] through
+/// [onPrintProgress].
+///
+/// Calls for the same printer made from this app are queued (FIFO) and run
+/// one after another.
+///
+/// Errors are thrown as [ZebraPrinterException] with a typed
+/// [ZebraPrinterErrorCode].
 class PrinterManager {
   /// Singleton instance
   static final PrinterManager _instance = PrinterManager._internal();
@@ -323,18 +33,24 @@ class PrinterManager {
   /// Factory constructor
   factory PrinterManager() => _instance;
 
-  /// Private constructor
   PrinterManager._internal() {
     _channel.setMethodCallHandler(_handleMethodCall);
   }
 
-  /// Config instance for logging
   final ZebraConfig _config = ZebraConfig();
 
-  /// Method channel
   static const MethodChannel _channel = MethodChannel(
     'com.sameetdmr.zebra_printer/zebra_print',
   );
+
+  final PrintQueue _queue = PrintQueue();
+  int _jobSeq = 0;
+
+  /// Options used when a call does not pass its own.
+  PrintOptions defaultOptions = PrintOptions.shared;
+
+  /// Status and info calls wait less for a busy printer than print jobs.
+  static const Duration _queryMaxWait = Duration(seconds: 10);
 
   /// Callback for when a printer is found during discovery
   void Function(DiscoveredPrinter printer)? onPrinterFound;
@@ -345,763 +61,563 @@ class PrinterManager {
   /// Callback for when connection state changes
   void Function(Map<String, dynamic> info)? onConnectionStateChanged;
 
-  /// Callback for print progress updates
-  /// [PrintProgress] contains current state, progress percentage, and optional message
+  /// Callback for print progress updates (including [PrintState.waiting]
+  /// while another device uses the printer).
   void Function(PrintProgress progress)? onPrintProgress;
 
-  /// Flag to track if manager is disposed
   bool _isDisposed = false;
 
-  /// Throws exception if manager is disposed
   void _checkDisposed() {
     if (_isDisposed) {
-      _config.log('⚠️ PrinterManager is disposed! Call reinitialize() first.');
       throw StateError(
         'PrinterManager has been disposed. Call reinitialize() to use again.',
       );
     }
   }
 
-  // ==================== PRINT LOCK MECHANISM ====================
-  // Birden fazla yazıcıya aynı anda yazdırma isteği gönderilmesini engeller
+  // ==================== QUEUE / LOCK STATE ====================
 
-  /// 🔒 Per-printer lock: MAC address -> print start time
-  /// Her yazıcı için ayrı lock (çoklu yazıcı desteği)
-  final Map<String, DateTime> _printerLocks = {};
-
-  /// 🔒 Is a specific printer currently printing?
-  bool isPrinterLocked(String address) => _printerLocks.containsKey(address);
-
-  /// 🔒 Get all currently printing printers
-  List<String> get currentlyPrintingPrinters => _printerLocks.keys.toList();
-
-  /// 🔒 How long has a specific printer been printing?
-  Duration? getPrinterLockDuration(String address) {
-    final startTime = _printerLocks[address];
-    if (startTime == null) return null;
-    return DateTime.now().difference(startTime);
-  }
-
-  /// Is any print operation in progress? (lock state)
-  bool get isPrintingInProgress => _printerLocks.isNotEmpty;
-
-  /// Address of printer currently printing (if any)
-  String? get currentPrintingAddress => _printerLocks.keys.firstOrNull;
-
-  /// 🔒 Current print progress percentage (0-100, null if not printing)
   int? _currentPrintPercentage;
+
+  /// Progress of the running print job (0-100), null when idle.
   int? get currentPrintPercentage => _currentPrintPercentage;
 
-  /// ⏱️ Maximum print duration before auto-timeout (15 seconds)
-  static const Duration _maxPrintDuration = Duration(seconds: 15);
-
-  /// 🔒 Handle print lock automatically from progress callback
-  /// Lock is acquired when printing starts, released when completed/error
-  /// Auto-releases after 15 seconds as safety timeout
-  void _handlePrintLockFromProgress(PrintProgress progress) {
-    final address = progress.address;
-    if (address == null) return;
-
-    // ⏱️ Check for timeout - if printing for more than 15 seconds, auto-release
-    final lockTime = _printerLocks[address];
-    if (lockTime != null &&
-        progress.state != PrintState.completed &&
-        progress.state != PrintState.error) {
-      final duration = DateTime.now().difference(lockTime);
-      if (duration > _maxPrintDuration) {
-        _config.log(
-          '⏱️ Print timeout for $address! Auto-releasing lock after ${duration.inSeconds}s',
-        );
-        _printerLocks.remove(address);
-        onPrintProgress?.call(
-          PrintProgress(
-            state: PrintState.error,
-            percentage: 0,
-            errorMessage: 'Print timeout (${_maxPrintDuration.inSeconds}s)',
-            address: address,
-          ),
-        );
-        return;
-      }
-    }
-
-    switch (progress.state) {
-      case PrintState.connecting:
-      case PrintState.sending:
-      case PrintState.printing:
-      case PrintState.verifying:
-      case PrintState.processing:
-        // 🔒 Yazdırma başladı/devam ediyor - lock al
-        if (!_printerLocks.containsKey(address)) {
-          _printerLocks[address] = DateTime.now();
-          _config.log('🔒 Auto-lock acquired for printer: $address');
-        }
-
-      case PrintState.completed:
-        // 🔓 Yazdırma tamamlandı - lock serbest bırak
-        _config.log(
-          '🔓 Auto-lock released for $address: completed (${progress.percentage}%)',
-        );
-        _printerLocks.remove(address);
-
-      case PrintState.error:
-        // 🔓 Hata oluştu - lock serbest bırak
-        _config.log(
-          '🔓 Auto-lock released for $address: error - ${progress.errorMessage}',
-        );
-        _printerLocks.remove(address);
-
-      case PrintState.idle:
-        // Idle - lock durumunu değiştirme
-        break;
-    }
+  /// Is a job running or waiting in this app's queue for [address]?
+  bool isPrinterLocked(String address) {
+    final key = _key(address);
+    return _queue.isActive(key) || _queue.pendingCount(key) > 0;
   }
 
-  /// Method call handler for callbacks from native side
+  /// Number of jobs waiting behind the running one for [address].
+  int pendingJobCount(String address) => _queue.pendingCount(_key(address));
+
+  /// Printers that currently run a job from this app.
+  List<String> get currentlyPrintingPrinters => _queue.activeKeys;
+
+  /// How long the running job for [address] has been going.
+  Duration? getPrinterLockDuration(String address) {
+    final since = _queue.activeSince(_key(address));
+    return since == null ? null : DateTime.now().difference(since);
+  }
+
+  /// Is any job running?
+  bool get isPrintingInProgress => _queue.activeKeys.isNotEmpty;
+
+  /// Address of a printer running a job (if any).
+  String? get currentPrintingAddress => _queue.activeKeys.firstOrNull;
+
+  /// Removes jobs that have not started yet (for [address], or all printers).
+  /// Their futures fail with [ZebraPrinterErrorCode.cancelled].
+  int cancelPendingJobs([String? address]) =>
+      _queue.cancelPending(address == null ? null : _key(address));
+
+  /// Cancels pending jobs. A running job cannot be interrupted.
+  @Deprecated('Jobs are queued since 0.5.0. Use cancelPendingJobs().')
+  void forceReleasePrintLock([String? address]) => cancelPendingJobs(address);
+
+  /// Queue key: MAC address normalised to "AA:BB:CC:DD:EE:FF".
+  static String _key(String address) {
+    final hex = address.trim().replaceAll(RegExp('[:-]'), '').toUpperCase();
+    if (!RegExp(r'^[0-9A-F]{12}$').hasMatch(hex)) {
+      return address.trim().toUpperCase();
+    }
+    final parts = <String>[];
+    for (var i = 0; i < 12; i += 2) {
+      parts.add(hex.substring(i, i + 2));
+    }
+    return parts.join(':');
+  }
+
+  String _nextJobId() =>
+      '${DateTime.now().microsecondsSinceEpoch}-${++_jobSeq}';
+
+  // ==================== CHANNEL ====================
+
   Future<dynamic> _handleMethodCall(MethodCall call) async {
     switch (call.method) {
       case 'onPrinterFound':
         if (onPrinterFound != null && call.arguments != null) {
-          final printer = DiscoveredPrinter.fromMap(
-            call.arguments as Map<dynamic, dynamic>,
+          onPrinterFound!(
+            DiscoveredPrinter.fromMap(call.arguments as Map<dynamic, dynamic>),
           );
-          onPrinterFound!(printer);
         }
       case 'onDiscoveryFinished':
         if (onDiscoveryFinished != null && call.arguments != null) {
-          final List<dynamic> printersList = call.arguments as List<dynamic>;
-          final List<DiscoveredPrinter> printers =
-              printersList
+          final list =
+              (call.arguments as List<dynamic>)
                   .map(
                     (e) =>
                         DiscoveredPrinter.fromMap(e as Map<dynamic, dynamic>),
                   )
                   .toList();
-          onDiscoveryFinished!(printers);
+          onDiscoveryFinished!(list);
         }
       case 'onConnectionStateChanged':
         if (onConnectionStateChanged != null && call.arguments != null) {
-          final info = Map<String, dynamic>.from(call.arguments as Map);
-          onConnectionStateChanged!(info);
+          onConnectionStateChanged!(
+            Map<String, dynamic>.from(call.arguments as Map),
+          );
         }
       case 'onPrintProgress':
-        // 📊 Handle native print progress callback
         if (call.arguments != null) {
-          final progressData = call.arguments as Map<dynamic, dynamic>;
-          final progress = PrintProgress.fromNative(progressData);
-          _config.log(
-            'Native print progress: ${progress.state} - ${progress.percentage}% - ${progress.message}',
+          final progress = PrintProgress.fromNative(
+            call.arguments as Map<dynamic, dynamic>,
           );
-
-          // 🔒 AUTO LOCK MANAGEMENT based on progress
-          _handlePrintLockFromProgress(progress);
-
-          // Call the global callback if set
-          onPrintProgress?.call(progress);
+          _emitProgress(progress);
         }
       default:
         break;
     }
   }
 
-  // ==================== DISCOVERY METHODS ====================
+  void _emitProgress(PrintProgress progress) {
+    _currentPrintPercentage =
+        progress.isInProgress ? progress.percentage : null;
+    _config.log(
+      'Print progress: ${progress.state.name} ${progress.percentage}% '
+      '${progress.message ?? ''}',
+    );
+    onPrintProgress?.call(progress);
+  }
 
-  /// Starts discovering Zebra printers using Zebra Link-OS SDK
+  /// Invokes a native method and converts platform errors.
+  Future<T?> _invoke<T>(String method, [Map<String, Object?>? args]) async {
+    try {
+      return await _channel.invokeMethod<T>(method, args);
+    } on PlatformException catch (e) {
+      final error = ZebraPrinterException.fromPlatformException(e);
+      _config.log('$method failed: $error');
+      throw error;
+    }
+  }
+
+  static void _requireAddress(String? address) {
+    if (address == null || address.trim().isEmpty) {
+      throw ZebraPrinterException(
+        ZebraPrinterErrorCode.invalidArgument,
+        'Printer address cannot be empty',
+      );
+    }
+  }
+
+  /// Queues a native call for [address].
+  Future<T> _enqueue<T>(
+    String address,
+    String label,
+    Future<T> Function() task,
+  ) {
+    _checkDisposed();
+    _requireAddress(address);
+    return _queue.add<T>(_key(address), task, label: label);
+  }
+
+  /// Queues a print job and reports a local "connecting" event first.
+  Future<T> _enqueuePrintJob<T>(
+    String address,
+    String method,
+    Map<String, Object?> args,
+    PrintOptions? options, {
+    int? totalLabels,
+  }) {
+    final jobId = _nextJobId();
+    return _enqueue<T>(address, method, () async {
+      _emitProgress(
+        PrintProgress(
+          state: PrintState.connecting,
+          percentage: 5,
+          message: 'Preparing printer...',
+          address: address,
+          jobId: jobId,
+          isBatch: totalLabels != null,
+          currentLabel: totalLabels == null ? null : 0,
+          totalLabels: totalLabels,
+        ),
+      );
+      final result = await _invoke<T>(method, {
+        ...args,
+        'address': address,
+        'jobId': jobId,
+        'options': (options ?? defaultOptions).toMap(),
+      });
+      return result as T;
+    });
+  }
+
+  PrintOptions _queryOptions(PrintOptions? options) =>
+      options ?? defaultOptions.copyWith(maxWait: _queryMaxWait);
+
+  // ==================== DISCOVERY ====================
+
+  /// Discovers Zebra printers over Bluetooth.
   ///
-  /// [type] Discovery type: DiscoveryType.bluetooth, DiscoveryType.network, or DiscoveryType.both (default)
-  ///
-  /// Returns a list of discovered Zebra printers
+  /// [DiscoveryType.network] is still accepted for discovery, but this package
+  /// prints over Bluetooth only.
   Future<List<DiscoveredPrinter>> startDiscovery({
-    DiscoveryType type = DiscoveryType.both,
+    DiscoveryType type = DiscoveryType.bluetooth,
   }) async {
     _checkDisposed();
-    try {
-      _config.log('startDiscovery called with type: ${type.value}');
-      final result = await _channel.invokeMethod('startDiscovery', {
-        'type': type.value,
-      });
-
-      if (result == null) {
-        _config.log('startDiscovery returned null');
-        return [];
-      }
-
-      final List<dynamic> printersList = result as List<dynamic>;
-      _config.log('startDiscovery found ${printersList.length} printers');
-
-      final printers =
-          printersList
-              .map((e) => DiscoveredPrinter.fromMap(e as Map<dynamic, dynamic>))
-              .toList();
-
-      return printers;
-    } on PlatformException catch (e) {
-      _config.log('startDiscovery error: ${e.code} - ${e.message}');
-      throw Exception("Discovery Error (${e.code}): ${e.message}");
-    } catch (e) {
-      _config.log('startDiscovery unexpected error: $e');
-      rethrow;
-    }
+    final result = await _invoke<List<dynamic>>('startDiscovery', {
+      'type': type.value,
+    });
+    return (result ?? [])
+        .map((e) => DiscoveredPrinter.fromMap(e as Map<dynamic, dynamic>))
+        .toList();
   }
 
-  /// Stops the printer discovery process
+  /// Stops discovery. The pending [startDiscovery] call completes with the
+  /// printers found so far.
   Future<bool> stopDiscovery() async {
     _checkDisposed();
-    try {
-      final result = await _channel.invokeMethod('stopDiscovery');
-      return result as bool? ?? false;
-    } on PlatformException catch (e) {
-      throw Exception("Stop Discovery Error (${e.code}): ${e.message}");
-    }
+    return await _invoke<bool>('stopDiscovery') ?? false;
   }
 
-  // ==================== CONNECTION METHODS ====================
-
-  /// Connects to a Zebra printer and maintains the connection
-  ///
-  /// [address] Printer address (MAC address for Bluetooth or IP for Network)
-  ///
-  /// Returns true if connected successfully, false otherwise
-  Future<bool> connect(String address) async {
-    _checkDisposed();
-    try {
-      _config.log('connect called for address: $address');
-      final result = await _channel.invokeMethod('connect', {
-        'address': address,
-      });
-      _config.log('connect result: $result');
-      return result as bool? ?? false;
-    } on PlatformException catch (e) {
-      _config.log('connect error: ${e.code} - ${e.message}');
-      throw Exception("Connection Error (${e.code}): ${e.message}");
-    }
-  }
-
-  /// Disconnects from a Zebra printer
-  ///
-  /// [address] Optional printer address. If null, disconnects from currently connected printer
-  ///
-  /// Returns true if disconnected successfully, false otherwise
-  Future<bool> disconnect({String? address}) async {
-    _checkDisposed();
-    try {
-      _config.log('disconnect called for address: $address');
-      final result = await _channel.invokeMethod('disconnect', {
-        'address': address,
-      });
-      _config.log('disconnect result: $result');
-      return result as bool? ?? false;
-    } on PlatformException catch (e) {
-      _config.log('disconnect error: ${e.code} - ${e.message}');
-      throw Exception("Disconnection Error (${e.code}): ${e.message}");
-    }
-  }
-
-  /// Checks if printer is currently connected
-  ///
-  /// [address] Optional printer address to check. If null, checks general connection status
-  ///
-  /// Returns true if connected, false otherwise
-  Future<bool> isConnected({String? address}) async {
-    _checkDisposed();
-    try {
-      _config.log('isConnected called for address: $address');
-      final result = await _channel.invokeMethod('isConnected', {
-        'address': address,
-      });
-      _config.log('isConnected result: $result');
-      return result as bool? ?? false;
-    } on PlatformException catch (e) {
-      _config.log('isConnected error: ${e.code} - ${e.message}');
-      throw Exception("IsConnected Error (${e.code}): ${e.message}");
-    }
-  }
-
-  /// Unpairs a Bluetooth device
-  /// Uses Android Bluetooth API to remove bonding
-  ///
-  /// Returns true if successful, throws exception otherwise
-  Future<bool> unpairPrinter(String address) async {
-    _checkDisposed();
-    try {
-      _config.log('unpairPrinter called for: $address');
-      final result = await _channel.invokeMethod('unpairPrinter', {
-        'address': address,
-      });
-      _config.log('unpairPrinter successful');
-      return result as bool;
-    } on PlatformException catch (e) {
-      _config.log('unpairPrinter error: ${e.code} - ${e.message}');
-      throw Exception("Unpair Printer Error (${e.code}): ${e.message}");
-    }
-  }
-
-  /// Gets paired (bonded) Bluetooth devices
-  /// Uses Android Bluetooth API to get bonded devices
-  ///
-  /// Returns a list of paired Bluetooth devices as BluetoothDevice objects
+  /// Bluetooth devices paired with this device.
   Future<List<BluetoothDevice>> getPairedPrinters() async {
     _checkDisposed();
-    try {
-      _config.log('getPairedPrinters called');
-      final result = await _channel.invokeMethod('getPairedPrinters');
-
-      if (result == null) {
-        _config.log('getPairedPrinters returned null');
-        return [];
-      }
-
-      final List<dynamic> devicesList = result as List<dynamic>;
-      _config.log('getPairedPrinters found ${devicesList.length} printers');
-
-      // Map'i BluetoothDevice'a dönüştür
-      final devices =
-          devicesList.map((deviceMap) {
-            final map = Map<String, dynamic>.from(deviceMap as Map);
-            return BluetoothDevice(
-              name: map['friendlyName'] as String?,
-              address: map['address'] as String,
-              type:
-                  BluetoothDeviceType
-                      .classic, // Paired devices are classic Bluetooth
-              bondState: BluetoothBondState.bonded, // All are bonded
-            );
-          }).toList();
-
-      return devices;
-    } on PlatformException catch (e) {
-      _config.log('getPairedPrinters error: ${e.code} - ${e.message}');
-      throw Exception("Get Paired Printers Error (${e.code}): ${e.message}");
-    }
-  }
-
-  // ==================== PRINT LOCK HELPERS ====================
-
-  /// 🔄 Force release print lock (emergency use)
-  /// Use this if a print operation hangs or gets stuck
-  void forceReleasePrintLock([String? address]) {
-    if (address != null) {
-      _config.log('⚠️ Force releasing print lock for: $address');
-      _printerLocks.remove(address);
-    } else {
-      _config.log(
-        '⚠️ Force releasing ALL print locks (${_printerLocks.length} printers)',
+    final result = await _invoke<List<dynamic>>('getPairedPrinters');
+    return (result ?? []).map((raw) {
+      final map = Map<String, dynamic>.from(raw as Map);
+      return BluetoothDevice(
+        name: map['friendlyName'] as String?,
+        address: map['address'] as String,
+        type: BluetoothDeviceType.classic,
+        bondState: BluetoothBondState.bonded,
       );
-      _printerLocks.clear();
-    }
+    }).toList();
   }
 
-  // ==================== PRINTING METHODS (INTERNAL) ====================
+  /// Removes the pairing with a printer.
+  Future<bool> unpairPrinter(String address) async {
+    _checkDisposed();
+    _requireAddress(address);
+    return await _invoke<bool>('unpairPrinter', {'address': address}) ?? false;
+  }
 
-  /// Internal: Sends ZPL code to the printer
-  /// Use [safePrint] instead for lock-protected printing
-  Future<String> _sendZplToPrinter(String macAddress, String zplData) async {
-    if (macAddress.isEmpty) {
-      throw Exception("MAC address cannot be empty.");
-    }
-    try {
-      // If ZPL code already starts with ^XA and ends with ^XZ, send as is
-      final String finalZplToSend;
-      if (zplData.trim().startsWith("^XA") && zplData.trim().endsWith("^XZ")) {
-        finalZplToSend = zplData;
-      } else {
-        // Otherwise, wrap the ZPL code between ^XA and ^XZ
-        const String initCommands = "^XA";
-        finalZplToSend = "$initCommands$zplData^XZ";
-      }
+  // ==================== CONNECTION ====================
 
-      final String result =
-          await _channel.invokeMethod<String>('printLabel', {
-            'address': macAddress,
-            'data': finalZplToSend,
+  /// Checks that the printer is reachable: connects, verifies it is a Zebra
+  /// printer and **disconnects again** (the printer is not held).
+  ///
+  /// Returns true on success, throws [ZebraPrinterException] otherwise.
+  Future<bool> connect(String address, {PrintOptions? options}) async {
+    return _enqueue(address, 'connect', () async {
+      return await _invoke<bool>('connect', {
+            'address': address,
+            'options': _queryOptions(options).toMap(),
           }) ??
-          '';
-      return result;
-    } on PlatformException catch (e) {
-      throw Exception("Print Error (${e.code}): ${e.message}");
-    }
+          false;
+    });
   }
 
-  // ==================== SAFE PRINTING (WITH LOCK) ====================
-
-  /// 🔒 SAFE PRINT: Prints with lock mechanism to prevent concurrent prints
-  ///
-  /// This method ensures only one printer can print at a time.
-  /// If another printer is currently printing, throws [PrintLockedException].
-  ///
-  /// Lock is automatically managed by progress callbacks:
-  /// - Acquired when native sends "connecting/sending/printing"
-  /// - Released when native sends "completed" or "error"
-  /// - Auto-released after 30 seconds (timeout safety)
-  ///
-  /// [macAddress] MAC address of the printer
-  /// [zplData] ZPL code
-  ///
-  /// Returns result message if successful
-  /// Throws [PrintLockedException] if another print is in progress
-  /// Throws [Exception] on print errors
-  Future<String> safePrint(String macAddress, String zplData) async {
+  /// Closes a link kept open with [PrintOptions.keepAlive]. With the default
+  /// shared options there is nothing to close and this returns true.
+  Future<bool> disconnect({String? address}) async {
     _checkDisposed();
-    if (macAddress.isEmpty) {
-      throw Exception("MAC address cannot be empty.");
-    }
-
-    // 🔒 Check if THIS printer is currently printing
-    if (isPrinterLocked(macAddress)) {
-      final duration = getPrinterLockDuration(macAddress);
-      throw PrintLockedException(
-        'Print in progress on this printer: $macAddress (${duration?.inSeconds ?? 0}s)',
-        currentPrintingAddress: macAddress,
-        requestedAddress: macAddress,
-      );
-    }
-
-    // 🚀 Send immediate "preparing" progress before native "connecting" arrives
-    onPrintProgress?.call(
-      PrintProgress(
-        state: PrintState.connecting,
-        percentage: 5,
-        message: 'Preparing printer...',
-        address: macAddress,
-      ),
-    );
-
-    // Actual print - lock is managed by progress callback
-    return _sendZplToPrinter(macAddress, zplData);
+    _requireAddress(address);
+    return await _invoke<bool>('disconnect', {'address': address}) ?? false;
   }
 
-  /// 🔒 SAFE BATCH PRINT: Batch print with lock mechanism
-  ///
-  /// Same as [safePrint] but for multiple labels.
-  /// Throws [PrintLockedException] if another print is in progress.
-  Future<String> safeBatchPrint(String macAddress, List<String> zplList) async {
+  /// True only while a link is kept open by [PrintOptions.keepAlive].
+  Future<bool> isConnected({String? address}) async {
     _checkDisposed();
-    if (macAddress.isEmpty) {
-      throw Exception("MAC address cannot be empty.");
-    }
-    if (zplList.isEmpty) {
-      throw Exception("ZPL list cannot be empty.");
-    }
-
-    // 🔒 Check if THIS printer is currently printing
-    if (isPrinterLocked(macAddress)) {
-      final duration = getPrinterLockDuration(macAddress);
-      throw PrintLockedException(
-        'Print in progress on this printer: $macAddress (${duration?.inSeconds ?? 0}s)',
-        currentPrintingAddress: macAddress,
-        requestedAddress: macAddress,
-      );
-    }
-
-    // 🚀 Send immediate "preparing" progress before native "connecting" arrives
-    onPrintProgress?.call(
-      PrintProgress(
-        state: PrintState.connecting,
-        percentage: 5,
-        message: 'Preparing printer...',
-        address: macAddress,
-        isBatch: true,
-        currentLabel: 0,
-        totalLabels: zplList.length,
-      ),
-    );
-
-    // Actual batch print - lock is managed by progress callback
-    return _sendMultipleZplToPrinter(macAddress, zplList);
+    if (address == null || address.isEmpty) return false;
+    return await _invoke<bool>('isConnected', {'address': address}) ?? false;
   }
 
-  /// Internal: Sends multiple ZPL codes to the printer
-  /// Use [safeBatchPrint] instead for lock-protected batch printing
-  Future<String> _sendMultipleZplToPrinter(
+  // ==================== PRINTING ====================
+
+  static String _wrapZpl(String zpl) {
+    final trimmed = zpl.trim();
+    if (trimmed.startsWith('^XA') && trimmed.endsWith('^XZ')) return zpl;
+    return '^XA$zpl^XZ';
+  }
+
+  /// Prints a ZPL label. Data not wrapped in `^XA ... ^XZ` is wrapped.
+  ///
+  /// Queued behind other jobs for the same printer from this app. Waits for
+  /// the printer if another device is using it.
+  ///
+  /// Throws [ZebraPrinterException].
+  Future<String> safePrint(
     String macAddress,
-    List<String> zplList,
-  ) async {
-    if (macAddress.isEmpty) {
-      throw Exception("MAC address cannot be empty.");
-    }
-    if (zplList.isEmpty) {
-      throw Exception("ZPL list cannot be empty.");
-    }
-
-    try {
-      // Prepare ZPL list: ensure each ZPL starts with ^XA and ends with ^XZ
-      final List<String> finalZplList =
-          zplList.map((zplData) {
-            final trimmed = zplData.trim();
-            if (trimmed.startsWith("^XA") && trimmed.endsWith("^XZ")) {
-              return zplData;
-            } else {
-              return "^XA$zplData^XZ";
-            }
-          }).toList();
-
-      _config.log(
-        '_sendMultipleZplToPrinter called for $macAddress with ${finalZplList.length} labels',
+    String zplData, {
+    PrintOptions? options,
+  }) async {
+    if (zplData.isEmpty) {
+      throw ZebraPrinterException(
+        ZebraPrinterErrorCode.invalidArgument,
+        'ZPL data cannot be empty',
       );
-      final String result =
-          await _channel.invokeMethod<String>('printMultipleLabels', {
-            'address': macAddress,
-            'dataList': finalZplList,
-          }) ??
-          '';
-      _config.log('_sendMultipleZplToPrinter result: $result');
-      return result;
-    } on PlatformException catch (e) {
-      _config.log('_sendMultipleZplToPrinter error: ${e.code} - ${e.message}');
-      throw Exception("Batch Print Error (${e.code}): ${e.message}");
     }
+    return _enqueuePrintJob<String>(macAddress, 'printLabel', {
+      'data': _wrapZpl(zplData),
+    }, options);
   }
 
-  /// Calibrates the printer with specified calibration type
-  /// Uses [safePrint] for lock protection
+  /// Prints several labels in one Bluetooth session.
+  Future<String> safeBatchPrint(
+    String macAddress,
+    List<String> zplList, {
+    PrintOptions? options,
+  }) async {
+    if (zplList.isEmpty) {
+      throw ZebraPrinterException(
+        ZebraPrinterErrorCode.invalidArgument,
+        'ZPL list cannot be empty',
+      );
+    }
+    return _enqueuePrintJob<String>(
+      macAddress,
+      'printMultipleLabels',
+      {'dataList': zplList.map(_wrapZpl).toList()},
+      options,
+      totalLabels: zplList.length,
+    );
+  }
+
+  /// Sends raw printer commands as-is (no `^XA`/`^XZ` wrapping and no status
+  /// check), e.g. SGD `! U1 setvar ...` lines or `~JC`.
+  Future<bool> sendCommand(
+    String macAddress,
+    String command, {
+    PrintOptions? options,
+  }) async {
+    if (command.isEmpty) {
+      throw ZebraPrinterException(
+        ZebraPrinterErrorCode.invalidArgument,
+        'Command cannot be empty',
+      );
+    }
+    final result = await _enqueuePrintJob<bool?>(macAddress, 'sendCommand', {
+      'data': command,
+    }, options);
+    return result ?? false;
+  }
+
+  /// Sets the media sensor mode and runs a media calibration.
   ///
-  /// [macAddress] MAC address of the printer
-  /// [calibrationType] Calibration type (gap or bar)
-  ///
-  /// Returns result message if successful
-  /// Throws [PrintLockedException] if another print is in progress
+  /// Uses [sendCommand], so it also works while the printer reports
+  /// "paper out" (which a calibration often fixes).
   Future<String> calibratePrinter(
     String macAddress,
-    CalibrationType calibrationType,
-  ) async {
-    return safePrint(macAddress, calibrationType.zplCommand);
+    CalibrationType calibrationType, {
+    PrintOptions? options,
+  }) async {
+    await sendCommand(macAddress, calibrationType.command, options: options);
+    return 'Calibration started: ${calibrationType.name}';
   }
 
-  /// Prints a test label
-  /// Uses [safePrint] for lock protection
-  ///
-  /// [macAddress] MAC address of the printer
-  ///
-  /// Returns result message if successful
-  /// Throws [PrintLockedException] if another print is in progress
-  Future<String> printTestLabel(String macAddress) async {
-    String testZpl = """^XA
-^PON
-^PW400
-^MMT
-^PR0
-^LH0,6
-^PMN
-^FO50,50
-^A0N,50,50
-^FDZebra Test Print^FS
-^FO50,120
-^A0N,30,30
-^FDDate: ${DateTime.now()}^FS
-^FO50,170
-^A0N,30,30
-^FDTest Successful!^FS
-^PQ1,0,1,Y
-^XZ""";
-    return safePrint(macAddress, testZpl);
+  /// Prints a small test label.
+  Future<String> printTestLabel(
+    String macAddress, {
+    PrintOptions? options,
+  }) async {
+    final testZpl =
+        '^XA\n^PW400\n^LH0,6\n'
+        '^FO50,50^A0N,50,50^FDZebra Test Print^FS\n'
+        '^FO50,120^A0N,30,30^FDDate: ${DateTime.now()}^FS\n'
+        '^FO50,170^A0N,30,30^FDTest Successful!^FS\n'
+        '^XZ';
+    return safePrint(macAddress, testZpl, options: options);
   }
 
-  /// Gets information about the printer
+  /// Prints an image (PNG, JPG, BMP or WebP bytes) as a label.
   ///
-  /// [macAddress] MAC address of the printer
-  ///
-  /// Returns PrinterInfo object with model, serial number, firmware, and language information
-  /// Throws an error if failed
-  Future<PrinterInfo> getPrinterInfo(String macAddress) async {
-    _checkDisposed();
-    _config.log('getPrinterInfo called with address: $macAddress');
-
-    if (macAddress.isEmpty) {
-      throw Exception("MAC address cannot be empty");
-    }
-
-    try {
-      _config.log('Invoking native getPrinterInfo method...');
-      final String result =
-          await _channel.invokeMethod<String>('getPrinterInfo', {
-            'address': macAddress,
-          }) ??
-          '';
-      _config.log('Native method returned: $result');
-
-      final printerInfo = PrinterInfo.fromString(result);
-      _config.log(
-        'PrinterInfo parsed successfully: ${printerInfo.toCompactString()}',
+  /// [x], [y] are the position in dots. [width] / [height] scale the image in
+  /// dots; 0 keeps the original size. Large images are down-sampled to at
+  /// most 2000 px on the longest side before conversion.
+  Future<String> printImage(
+    String macAddress,
+    Uint8List imageData, {
+    int x = 0,
+    int y = 0,
+    int width = 0,
+    int height = 0,
+    PrintOptions? options,
+  }) async {
+    if (imageData.isEmpty) {
+      throw ZebraPrinterException(
+        ZebraPrinterErrorCode.invalidArgument,
+        'Image data cannot be empty',
       );
-      return printerInfo;
-    } on PlatformException catch (e) {
-      _config.log(
-        'PlatformException in getPrinterInfo: Code: ${e.code}, Message: ${e.message}, Details: ${e.details}',
-      );
-      throw Exception("Printer Info Error (${e.code}): ${e.message}");
-    } catch (e) {
-      _config.log('Unexpected error in getPrinterInfo: $e');
-      throw Exception("Printer Info Error: $e");
     }
+    return _enqueuePrintJob<String>(macAddress, 'printImage', {
+      'imageData': imageData,
+      'x': x,
+      'y': y,
+      'width': width,
+      'height': height,
+    }, options);
   }
 
-  // ==================== ZEBRA SDK PRINTER STATUS ====================
+  // ==================== STATUS & INFO ====================
 
-  /// 🎯 Gets comprehensive printer status using Zebra SDK PrinterStatus class
+  /// Reads model, serial number, firmware, language, Link-OS version and
+  /// Protected Mode state.
+  Future<PrinterInfo> getPrinterInfo(
+    String macAddress, {
+    PrintOptions? options,
+  }) async {
+    return _enqueue(macAddress, 'getPrinterInfo', () async {
+      final result = await _invoke<Map<dynamic, dynamic>>('getPrinterInfo', {
+        'address': macAddress,
+        'options': _queryOptions(options).toMap(),
+      });
+      return PrinterInfo.fromMap(result ?? const {});
+    });
+  }
+
+  /// Reads the printer status in a short session.
   ///
-  /// This method provides all status information from Zebra SDK:
-  /// - isReadyToPrint: Is printer ready?
-  /// - isPrinting: Is printer currently printing?
-  /// - isPaperOut: Is paper out?
-  /// - isHeadOpen: Is head open?
-  /// - isHeadCold/isHeadTooHot: Head temperature issues
-  /// - isRibbonOut: Is ribbon out? (thermal transfer)
-  /// - isReceiveBufferFull: Is buffer full?
-  /// - labelsRemainingInBatch: Labels remaining in batch
-  /// - canPrint: Helper - can accept new print jobs?
-  /// - isBusy: Helper - is printer busy?
+  /// Never throws for printer/connection problems: they are returned in
+  /// [ZebraPrinterStatus.errorMessage] / [ZebraPrinterStatus.errorCode].
   ///
-  /// [macAddress] MAC address of the printer
-  ///
-  /// Returns [ZebraPrinterStatus] with comprehensive status information
-  Future<ZebraPrinterStatus> getZebraPrinterStatus(String macAddress) async {
+  /// Every call opens a Bluetooth link, so on a shared printer avoid polling
+  /// it in a loop: print jobs already check the status on their own link
+  /// (see [PrintOptions.checkStatusBeforePrint]).
+  Future<ZebraPrinterStatus> getZebraPrinterStatus(
+    String macAddress, {
+    PrintOptions? options,
+  }) async {
     _checkDisposed();
     if (macAddress.isEmpty) {
       return ZebraPrinterStatus.error('MAC address cannot be empty');
     }
-
     try {
-      _config.log('getZebraPrinterStatus called for: $macAddress');
-
-      final Map<dynamic, dynamic> result =
-          await _channel.invokeMethod<Map<dynamic, dynamic>>(
-            'getZebraPrinterStatus',
-            {'address': macAddress},
-          ) ??
-          {};
-
-      final status = ZebraPrinterStatus.fromNative(result);
-      _config.log('ZebraPrinterStatus: ${status.toCompactString()}');
-
-      return status;
-    } on PlatformException catch (e) {
-      _config.log('getZebraPrinterStatus error: ${e.code} - ${e.message}');
+      return await _enqueue(macAddress, 'getZebraPrinterStatus', () async {
+        final result = await _invoke<Map<dynamic, dynamic>>(
+          'getZebraPrinterStatus',
+          {'address': macAddress, 'options': _queryOptions(options).toMap()},
+        );
+        return ZebraPrinterStatus.fromNative(result ?? const {});
+      });
+    } on ZebraPrinterException catch (e) {
       return ZebraPrinterStatus.error(
-        'Status error (${e.code}): ${e.message}',
+        e.message,
         address: macAddress,
-      );
-    } catch (e) {
-      _config.log('getZebraPrinterStatus unexpected error: $e');
-      return ZebraPrinterStatus.error(
-        'Beklenmeyen hata: $e',
-        address: macAddress,
+        errorCode: e.code,
       );
     }
   }
 
-  /// 🔄 Checks if printer can accept new print jobs
-  ///
-  /// This is a quick check that returns true if:
-  /// - Printer is ready to print
-  /// - No paper/head/ribbon errors
-  /// - Printer is not paused
-  /// - Buffer is not full
-  ///
-  /// [macAddress] MAC address of the printer
-  ///
-  /// Returns true if printer can print, false otherwise
-  Future<bool> canPrint(String macAddress) async {
-    _checkDisposed();
-    try {
-      final status = await getZebraPrinterStatus(macAddress);
-      return status.canPrint;
-    } catch (e) {
-      _config.log('canPrint error: $e');
-      return false;
-    }
+  /// True if the printer can accept a job right now (one status session).
+  Future<bool> canPrint(String macAddress, {PrintOptions? options}) async {
+    final status = await getZebraPrinterStatus(macAddress, options: options);
+    return status.canPrint;
   }
 
-  /// 🔄 Checks if printer is currently busy (printing or has jobs in queue)
-  ///
-  /// [macAddress] MAC address of the printer
-  ///
-  /// Returns true if printer is busy, false otherwise
-  Future<bool> isPrinterBusy(String macAddress) async {
-    _checkDisposed();
-    try {
-      final status = await getZebraPrinterStatus(macAddress);
-      return status.isBusy;
-    } catch (e) {
-      _config.log('isPrinterBusy error: $e');
-      return false;
-    }
+  /// True if the printer is processing or has queued formats.
+  Future<bool> isPrinterBusy(String macAddress, {PrintOptions? options}) async {
+    final status = await getZebraPrinterStatus(macAddress, options: options);
+    return status.isBusy;
   }
 
-  /// ⏳ Waits for printer to be ready (not busy)
+  /// Polls the status until the printer is ready, has a critical error or
+  /// [timeout] passes.
   ///
-  /// Useful when switching between printers or printing multiple jobs
-  /// Polls the printer status until it's ready or timeout is reached
-  ///
-  /// [macAddress] MAC address of the printer
-  /// [timeout] Maximum time to wait (default: 10 seconds)
-  /// [pollInterval] Time between status checks (default: 500ms)
-  ///
-  /// Returns [ZebraPrinterStatus] when ready, or status with error if timeout
+  /// Each poll opens a short Bluetooth session. On a shared printer prefer
+  /// just calling [safePrint]: it waits for the printer by itself.
   Future<ZebraPrinterStatus> waitForPrinterReady(
     String macAddress, {
     Duration timeout = const Duration(seconds: 10),
-    Duration pollInterval = const Duration(milliseconds: 500),
+    Duration pollInterval = const Duration(seconds: 2),
   }) async {
     _checkDisposed();
-    _config.log('waitForPrinterReady: Waiting for $macAddress...');
-
     final stopwatch = Stopwatch()..start();
-    ZebraPrinterStatus lastStatus = ZebraPrinterStatus.disconnected(
-      address: macAddress,
-    );
-
+    var last = ZebraPrinterStatus.disconnected(address: macAddress);
     while (stopwatch.elapsed < timeout) {
-      lastStatus = await getZebraPrinterStatus(macAddress);
-
-      // Yazıcı hazırsa ve meşgul değilse dön
-      if (lastStatus.canPrint && !lastStatus.isBusy) {
-        _config.log(
-          'waitForPrinterReady: Printer is ready after ${stopwatch.elapsedMilliseconds}ms',
-        );
-        return lastStatus;
-      }
-
-      // Kritik hata varsa (kağıt yok, kafa açık) hemen dön
-      if (lastStatus.hasCriticalError) {
-        _config.log(
-          'waitForPrinterReady: Critical error - ${lastStatus.statusMessage}',
-        );
-        return lastStatus;
-      }
-
-      _config.log(
-        'waitForPrinterReady: Still busy... ${lastStatus.statusCode}',
+      final remaining = timeout - stopwatch.elapsed;
+      last = await getZebraPrinterStatus(
+        macAddress,
+        options: defaultOptions.copyWith(
+          maxWait: remaining < _queryMaxWait ? remaining : _queryMaxWait,
+        ),
       );
+      if (last.canPrint && !last.isBusy) return last;
+      if (last.hasCriticalError) return last;
       await Future<void>.delayed(pollInterval);
     }
-
-    // Timeout
-    _config.log('waitForPrinterReady: Timeout after ${timeout.inSeconds}s');
     return ZebraPrinterStatus(
-      isReadyToPrint: lastStatus.isReadyToPrint,
-      isPrinting: lastStatus.isPrinting,
+      isReadyToPrint: last.isReadyToPrint,
+      isPrinting: last.isPrinting,
       errorMessage: 'Printer was not ready within ${timeout.inSeconds} seconds',
+      errorCode: last.errorCode,
       address: macAddress,
     );
   }
 
-  // ==================== LOGGING CONTROL ====================
+  // ==================== FONTS ====================
 
-  /// Enable logging for both Dart and native (Java/Swift) sides
+  /// Uploads a font from the app's Flutter assets.
   ///
-  /// When enabled, all debug logs will be printed
-  /// Default: false (for production)
+  /// Accepts a ZPL `~DY` font file, a raw TTF or other ZPL text. The font name
+  /// is read from the `~DYE:name` header (fallback "font") and the font is
+  /// stored as `E:NAME`.
+  Future<bool> uploadFont(
+    String macAddress,
+    String assetPath, {
+    PrintOptions? options,
+  }) async {
+    _checkDisposed();
+    if (assetPath.isEmpty) {
+      throw ZebraPrinterException(
+        ZebraPrinterErrorCode.invalidArgument,
+        'Asset path cannot be empty',
+      );
+    }
+    final ByteData data = await rootBundle.load(assetPath);
+    return uploadFontData(
+      macAddress,
+      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+      options: options,
+    );
+  }
+
+  /// Uploads font bytes (see [uploadFont]).
+  Future<bool> uploadFontData(
+    String macAddress,
+    Uint8List fontData, {
+    PrintOptions? options,
+  }) async {
+    if (fontData.isEmpty) {
+      throw ZebraPrinterException(
+        ZebraPrinterErrorCode.invalidArgument,
+        'Font data cannot be empty',
+      );
+    }
+    final fontName = extractFontName(fontData);
+    return _enqueue(macAddress, 'uploadFontData', () async {
+      return await _invoke<bool>('uploadFontData', {
+            'address': macAddress,
+            'fontData': fontData,
+            'fontType': fontName,
+            'options': (options ?? defaultOptions).toMap(),
+          }) ??
+          false;
+    });
+  }
+
+  /// Reads the font name from a `~DYE:name,...` header; "font" if absent.
+  static String extractFontName(Uint8List fontData) {
+    final header = String.fromCharCodes(fontData.take(100));
+    final match = RegExp(r'~?DYE?:([^,]+)').firstMatch(header);
+    final name = match?.group(1)?.trim();
+    return (name == null || name.isEmpty) ? 'font' : name;
+  }
+
+  // ==================== LOGGING ====================
+
+  /// Enable logging for Dart and native sides.
   Future<void> enableLogging() async {
     _config.enableLogging();
     try {
       await _channel.invokeMethod('setLogging', {'enabled': true});
-      _config.log('Logging enabled (Dart + Native)');
     } catch (e) {
       _config.log('Failed to enable native logging: $e');
     }
   }
 
-  /// Disable logging for both Dart and native (Java/Swift) sides
+  /// Disable logging for Dart and native sides.
   Future<void> disableLogging() async {
     try {
       await _channel.invokeMethod('setLogging', {'enabled': false});
@@ -1111,178 +627,42 @@ class PrinterManager {
     _config.disableLogging();
   }
 
-  /// Check if logging is enabled on native side
+  /// Is logging enabled on the native side?
   Future<bool> isNativeLoggingEnabled() async {
     try {
-      final result = await _channel.invokeMethod<bool>('isLoggingEnabled');
-      return result ?? false;
-    } catch (e) {
-      _config.log('Failed to check native logging status: $e');
+      return await _channel.invokeMethod<bool>('isLoggingEnabled') ?? false;
+    } catch (_) {
       return false;
     }
   }
 
-  /// Check if logging is enabled on Dart side
+  /// Is logging enabled on the Dart side?
   bool get isLoggingEnabled => _config.isLoggingEnabled;
-
-  // ==================== FONT MANAGEMENT ====================
-
-  /// Uploads a font to the printer from assets
-  /// ZPL font file is automatically parsed to extract font name
-  ///
-  /// [macAddress] - The MAC address of the printer
-  /// [assetPath] - Path to the font asset (e.g., "assets/arial/arial.zpl")
-  ///
-  /// Returns [true] if upload was successful, [false] otherwise
-  ///
-  /// Throws [Exception] if the operation fails
-  ///
-  /// Example:
-  /// ```dart
-  /// final success = await printerManager.uploadFont(
-  ///   "00:07:80:12:34:56",
-  ///   "assets/arial/arial.zpl"
-  /// );
-  /// ```
-  Future<bool> uploadFont(String macAddress, String assetPath) async {
-    if (macAddress.isEmpty) {
-      throw Exception("MAC address cannot be empty.");
-    }
-
-    if (assetPath.isEmpty) {
-      throw Exception("Asset path cannot be empty.");
-    }
-
-    try {
-      // Read the asset to extract font name
-      final ByteData data = await rootBundle.load(assetPath);
-      final Uint8List fontData = data.buffer.asUint8List();
-      final String fontName = _extractFontNameFromZpl(fontData);
-
-      _config.log('📁 Uploading font: $assetPath to $macAddress as $fontName');
-
-      final bool result =
-          await _channel.invokeMethod<bool>('uploadFont', {
-            'address': macAddress,
-            'assetPath': assetPath,
-            'fontType': fontName,
-          }) ??
-          false;
-
-      if (result) {
-        _config.log('✅ Font upload successful: $fontName');
-      } else {
-        _config.log('❌ Font upload failed: $fontName');
-      }
-
-      return result;
-    } catch (e) {
-      _config.log('❌ Font upload error: $e');
-      throw Exception('Font upload failed: $e');
-    }
-  }
-
-  /// Upload font data directly from byte array
-  /// ZPL font file is automatically parsed to extract font name
-  Future<bool> uploadFontData(String macAddress, Uint8List fontData) async {
-    if (macAddress.isEmpty) {
-      throw Exception("MAC address cannot be empty.");
-    }
-
-    if (fontData.isEmpty) {
-      throw Exception("Font data cannot be empty.");
-    }
-
-    try {
-      // Extract font name from ZPL data (e.g., "~DYE:arial,B,T,915212" -> "arial")
-      String fontName = _extractFontNameFromZpl(fontData);
-
-      _config.log(
-        '📁 Uploading font data: ${fontData.length} bytes to $macAddress as $fontName',
-      );
-
-      final bool result =
-          await _channel.invokeMethod<bool>('uploadFontData', {
-            'address': macAddress,
-            'fontData': fontData,
-            'fontType': fontName,
-          }) ??
-          false;
-
-      if (result) {
-        _config.log('✅ Font data upload successful: $fontName');
-      } else {
-        _config.log('❌ Font data upload failed: $fontName');
-      }
-
-      return result;
-    } catch (e) {
-      _config.log('❌ Font data upload error: $e');
-      throw Exception('Font data upload failed: $e');
-    }
-  }
-
-  /// Extracts font name from ZPL font data
-  /// Parses "~DYE:fontname,..." format
-  String _extractFontNameFromZpl(Uint8List fontData) {
-    try {
-      // Convert first 100 bytes to string to find the font name
-      final String header = String.fromCharCodes(fontData.take(100));
-
-      // Look for ~DYE:fontname pattern
-      final RegExp dyePattern = RegExp(r'~?DYE?:([^,]+)');
-      final Match? match = dyePattern.firstMatch(header);
-
-      if (match != null && match.group(1) != null) {
-        final String fontName = match.group(1)!.trim();
-        _config.log('🔍 Extracted font name from ZPL: $fontName');
-        return fontName;
-      }
-
-      // Fallback: use "font" as default name
-      _config.log(
-        '⚠️ Could not extract font name from ZPL, using default: "font"',
-      );
-      return "font";
-    } catch (e) {
-      _config.log('⚠️ Error extracting font name: $e, using default: "font"');
-      return "font";
-    }
-  }
 
   // ==================== LIFECYCLE ====================
 
-  /// Disposes the PrinterManager and cleans up resources
+  /// Clears callbacks, cancels queued jobs and detaches the channel handler.
   ///
-  /// Call this when the PrinterManager is no longer needed
-  /// After calling dispose, the PrinterManager should not be used
+  /// [PrinterManager] is a singleton: only call this when the whole app is
+  /// done with printing. Call [reinitialize] to use it again.
   void dispose() {
     if (_isDisposed) return;
-
-    _config.log('PrinterManager disposing...');
-
-    // Clear callbacks
+    cancelPendingJobs();
     onPrinterFound = null;
     onDiscoveryFinished = null;
     onConnectionStateChanged = null;
     onPrintProgress = null;
-
-    // Remove method call handler
     _channel.setMethodCallHandler(null);
-
     _isDisposed = true;
-    _config.log('PrinterManager disposed');
   }
 
   /// Check if manager is disposed
   bool get isDisposed => _isDisposed;
 
-  /// Reinitialize the manager after dispose (if needed)
+  /// Reinitialize the manager after dispose.
   void reinitialize() {
     if (!_isDisposed) return;
-
     _channel.setMethodCallHandler(_handleMethodCall);
     _isDisposed = false;
-    _config.log('PrinterManager reinitialized');
   }
 }

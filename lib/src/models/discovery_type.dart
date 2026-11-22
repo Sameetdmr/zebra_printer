@@ -1,12 +1,13 @@
 /// Discovery type for Zebra printer discovery
 enum DiscoveryType {
-  /// Bluetooth discovery only
+  /// Bluetooth Classic discovery (default)
   bluetooth('bluetooth'),
 
-  /// Network discovery only
+  /// Network discovery (multicast). Discovery only: this package prints over
+  /// Bluetooth.
   network('network'),
 
-  /// Both Bluetooth and Network discovery
+  /// Kept for backwards compatibility: runs Bluetooth discovery.
   both('both');
 
   /// String value for native platform
@@ -24,7 +25,7 @@ enum DiscoveryType {
       case 'both':
         return DiscoveryType.both;
       default:
-        return DiscoveryType.both;
+        return DiscoveryType.bluetooth;
     }
   }
 

@@ -49,15 +49,8 @@ class _BluetoothTabState extends State<BluetoothTab> {
     widget.bluetoothManager.onConnectionStateChanged.listen((state) {
       if (mounted) {
         setState(() {
-          if (state == BluetoothConnectionState.connected) {
-            _status =
-                'Connected: ${widget.bluetoothManager.connectedDevice?.name}';
-          } else if (state == BluetoothConnectionState.disconnected) {
-            _status = 'Disconnected';
-          } else if (state == BluetoothConnectionState.connecting) {
-            _status = 'Connecting...';
-          } else if (state == BluetoothConnectionState.error) {
-            _status = 'Connection error';
+          if (state == BluetoothConnectionState.error) {
+            _status = 'Bluetooth connection error';
           }
         });
       }
@@ -97,32 +90,21 @@ class _BluetoothTabState extends State<BluetoothTab> {
     await widget.bluetoothManager.stopDiscovery();
   }
 
-  Future<void> _connectToDevice(BluetoothDevice device) async {
+  /// Selects the printer. No connection is opened here: print and status
+  /// calls connect only for the duration of the job, so the printer stays
+  /// free for other devices.
+  void _selectDevice(BluetoothDevice device) {
     setState(() {
-      _status = 'Connecting to ${device.name}...';
       _selectedDevice = device;
+      _status = 'Selected: ${device.name ?? device.address}';
     });
-
-    try {
-      await widget.bluetoothManager.connect(device.address);
-    } catch (e) {
-      setState(() {
-        _status = 'Connection error: $e';
-      });
-    }
   }
 
-  Future<void> _disconnect() async {
-    try {
-      await widget.bluetoothManager.disconnect();
-      setState(() {
-        _selectedDevice = null;
-      });
-    } catch (e) {
-      setState(() {
-        _status = 'Disconnection error: $e';
-      });
-    }
+  void _deselect() {
+    setState(() {
+      _selectedDevice = null;
+      _status = 'Ready';
+    });
   }
 
   Future<void> _printTest() async {
@@ -207,11 +189,11 @@ class _BluetoothTabState extends State<BluetoothTab> {
                 icon: Icon(_isScanning ? Icons.stop : Icons.search),
                 label: Text(_isScanning ? 'Stop Scan' : 'Scan Devices'),
               ),
-              if (widget.bluetoothManager.isConnected) ...[
+              if (_selectedDevice != null) ...[
                 ElevatedButton.icon(
-                  onPressed: _disconnect,
-                  icon: const Icon(Icons.link_off),
-                  label: const Text('Disconnect'),
+                  onPressed: _deselect,
+                  icon: const Icon(Icons.close),
+                  label: const Text('Deselect'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red.shade400,
                   ),
@@ -264,8 +246,7 @@ class _BluetoothTabState extends State<BluetoothTab> {
                     itemBuilder: (context, index) {
                       final device = _devices[index];
                       final isConnected =
-                          device.address ==
-                          widget.bluetoothManager.connectedDevice?.address;
+                          device.address == _selectedDevice?.address;
 
                       return Card(
                         margin: const EdgeInsets.symmetric(
@@ -302,9 +283,7 @@ class _BluetoothTabState extends State<BluetoothTab> {
                                   )
                                   : null,
                           onTap:
-                              isConnected
-                                  ? null
-                                  : () => _connectToDevice(device),
+                              isConnected ? null : () => _selectDevice(device),
                         ),
                       );
                     },

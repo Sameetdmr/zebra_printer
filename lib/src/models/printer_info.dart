@@ -6,6 +6,9 @@ enum PrinterLanguage {
   /// CPCL (Common Printer Command Language)
   cpcl,
 
+  /// Line print mode
+  linePrint,
+
   /// Unknown language
   unknown;
 
@@ -16,6 +19,7 @@ enum PrinterLanguage {
     final lower = language.toLowerCase();
     if (lower.contains('zpl')) return PrinterLanguage.zpl;
     if (lower.contains('cpcl')) return PrinterLanguage.cpcl;
+    if (lower.contains('line')) return PrinterLanguage.linePrint;
     return PrinterLanguage.unknown;
   }
 
@@ -26,6 +30,8 @@ enum PrinterLanguage {
         return 'ZPL';
       case PrinterLanguage.cpcl:
         return 'CPCL';
+      case PrinterLanguage.linePrint:
+        return 'Line Print';
       case PrinterLanguage.unknown:
         return 'Unknown';
     }
@@ -46,6 +52,12 @@ class PrinterInfo {
   /// Printer language (ZPL/CPCL)
   final PrinterLanguage language;
 
+  /// Link-OS version (null on printers without Link-OS)
+  final String? linkOsVersion;
+
+  /// Is the printer in Link-OS Protected Mode? (null if unknown / not Link-OS)
+  final bool? isProtectedMode;
+
   /// Raw info string (for debugging)
   final String? rawInfo;
 
@@ -54,12 +66,13 @@ class PrinterInfo {
     required this.serialNumber,
     required this.firmware,
     required this.language,
+    this.linkOsVersion,
+    this.isProtectedMode,
     this.rawInfo,
   });
 
-  /// Creates PrinterInfo from raw string response
-  /// Parses the string format returned from Android:
-  /// "Model: ZD421\nSeri No: XXXX\nFirmware: V84.20.11Z\nDil: ZPL\n"
+  /// Creates PrinterInfo from the legacy string format
+  /// ("Model: ZD421\nSerial: XXXX\nFirmware: V84.20.11Z\nLanguage: ZPL\n").
   factory PrinterInfo.fromString(String info) {
     final lines = info.split('\n');
 
@@ -89,13 +102,15 @@ class PrinterInfo {
     );
   }
 
-  /// Creates PrinterInfo from Map (for future use if Android returns Map)
+  /// Creates PrinterInfo from the map returned by the native side.
   factory PrinterInfo.fromMap(Map<dynamic, dynamic> map) {
     return PrinterInfo(
       model: map['model'] as String? ?? 'Unknown',
       serialNumber: map['serialNumber'] as String? ?? 'Unknown',
       firmware: map['firmware'] as String? ?? 'Unknown',
       language: PrinterLanguage.fromString(map['language'] as String?),
+      linkOsVersion: map['linkOsVersion'] as String?,
+      isProtectedMode: map['isProtectedMode'] as bool?,
       rawInfo: map['rawInfo'] as String?,
     );
   }
@@ -107,6 +122,8 @@ class PrinterInfo {
       'serialNumber': serialNumber,
       'firmware': firmware,
       'language': language.toString(),
+      'linkOsVersion': linkOsVersion,
+      'isProtectedMode': isProtectedMode,
       'rawInfo': rawInfo,
     };
   }
@@ -119,6 +136,8 @@ class PrinterInfo {
         '  Serial Number: $serialNumber\n'
         '  Firmware: $firmware\n'
         '  Language: ${language.toString()}\n'
+        '  Link-OS: ${linkOsVersion ?? '-'}\n'
+        '  Protected Mode: ${isProtectedMode ?? '-'}\n'
         '}';
   }
 

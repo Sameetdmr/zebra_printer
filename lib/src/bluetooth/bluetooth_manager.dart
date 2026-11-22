@@ -346,7 +346,7 @@ class BluetoothManager {
     try {
       // If this is the connected device, disconnect first
       if (_connectedDevice?.address == address) {
-        await disconnect();
+        await _closeRawSocket();
       }
 
       return await _channel.invokeMethod<bool>('unpairDevice', {
@@ -358,7 +358,15 @@ class BluetoothManager {
     }
   }
 
-  /// Connects to a device
+  /// Opens a raw Bluetooth (RFCOMM) socket to a device and **keeps it open**.
+  ///
+  /// Do not use this for Zebra printers: a printer accepts one Bluetooth link,
+  /// so an open socket here blocks every other device and this app's own
+  /// print jobs. `PrinterManager` connects only for the duration of a job.
+  @Deprecated(
+    'Holds the printer\'s only Bluetooth link. Print with PrinterManager, '
+    'which connects per job. Will be removed in a future release.',
+  )
   Future<bool> connect(String address) async {
     _checkDisposed();
     _config.log('connect called for: $address');
@@ -383,9 +391,14 @@ class BluetoothManager {
     }
   }
 
-  /// Disconnects from a device
+  /// Closes the socket opened by [connect].
+  @Deprecated('See connect(). Will be removed in a future release.')
   Future<bool> disconnect() async {
     _checkDisposed();
+    return _closeRawSocket();
+  }
+
+  Future<bool> _closeRawSocket() async {
     _config.log('disconnect called');
     if (_connectionState != BluetoothConnectionState.connected) {
       _config.log('Not connected, returning false');
@@ -417,7 +430,7 @@ class BluetoothManager {
 
     // Disconnect active connection if any
     if (isConnected) {
-      await disconnect();
+      await _closeRawSocket();
     }
 
     // Remove method call handler

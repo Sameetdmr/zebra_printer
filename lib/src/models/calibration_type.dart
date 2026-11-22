@@ -1,23 +1,35 @@
-/// Calibration type for Zebra printers
+/// Media sensor type used for calibration.
 enum CalibrationType {
-  /// Gap/web sensor calibration
+  /// Gap/web sensor (labels with gaps between them)
   gap,
 
-  /// Bar/mark sensor calibration
+  /// Black mark sensor (media with black marks on the back)
   bar;
 
-  /// Get ZPL command for calibration
-  String get zplCommand {
-    const String baseCommand =
-        '! U1 setvar "wlan.country_code" "turkey" ! U1 setvar "media.type" "label"';
+  /// SGD value for `media.sense_mode`.
+  String get senseMode => this == CalibrationType.gap ? 'gap' : 'bar';
 
-    switch (this) {
-      case CalibrationType.gap:
-        return '$baseCommand ! U1 setvar "media.sense_mode" "gap" ! U1 AUTOCAL ~JC^XA^JUS^XZ';
-      case CalibrationType.bar:
-        return '$baseCommand ! U1 setvar "media.sense_mode" "bar" ! U1 AUTOCAL ~JC^XA^JUS^XZ';
-    }
-  }
+  /// Raw command sequence sent with `PrinterManager.sendCommand`:
+  ///
+  /// 1. sets the media type to labels (SGD),
+  /// 2. sets the media sensor mode (SGD),
+  /// 3. runs a media calibration (`~JC`),
+  /// 4. saves the configuration (`^JUS`).
+  ///
+  /// SGD lines are terminated with CRLF and are not wrapped in `^XA ... ^XZ`
+  /// (SGD commands inside a ZPL format are ignored by the printer).
+  String get command =>
+      '! U1 setvar "media.type" "label"\r\n'
+      '! U1 setvar "media.sense_mode" "$senseMode"\r\n'
+      '~JC\r\n'
+      '^XA^JUS^XZ\r\n';
+
+  /// Previous name of [command].
+  ///
+  /// Before 0.5.0 this also changed `wlan.country_code` and was sent wrapped in
+  /// `^XA ... ^XZ`, which made the printer ignore the SGD lines.
+  @Deprecated('Use command. It is sent as raw data by calibratePrinter().')
+  String get zplCommand => command;
 
   /// Get CalibrationType from string value
   static CalibrationType? fromString(String value) {

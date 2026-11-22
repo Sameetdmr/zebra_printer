@@ -8,7 +8,7 @@ buildscript {
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:7.3.0'
+        classpath 'com.android.tools.build:gradle:8.7.3'
     }
 }
 
@@ -23,29 +23,29 @@ apply plugin: 'com.android.library'
 
 android {
     namespace 'com.sameetdmr.zebra_printer'
-    compileSdkVersion 33
+    // Link-OS SDK 2.17.5585 is tested on Android 15, 16 and 17 (API 35-37)
+    compileSdk 36
 
     defaultConfig {
-        minSdkVersion 21
+        minSdk 21
     }
 
-    lintOptions {
+    lint {
         disable 'InvalidPackage'
     }
-    
-    // Java sürümünü güncelle
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
 
     dependencies {
+        // Zebra Link-OS Multiplatform SDK for Android (ZSDK_ANDROID_API.jar, build 2.17.5585)
         implementation fileTree(dir: 'libs', include: ['*.jar'])
-        // Jackson dependencies for Zebra SDK
-        implementation 'com.fasterxml.jackson.core:jackson-core:2.14.2'
-        implementation 'com.fasterxml.jackson.core:jackson-databind:2.14.2'
-        implementation 'com.fasterxml.jackson.core:jackson-annotations:2.14.2'
-        // Apache Commons for Zebra SDK
-        implementation 'org.apache.commons:commons-lang3:3.12.0'
+        // Runtime dependencies required by the Zebra SDK (JSON settings / file operations)
+        implementation 'com.fasterxml.jackson.core:jackson-core:2.17.2'
+        implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
+        implementation 'com.fasterxml.jackson.core:jackson-annotations:2.17.2'
+        implementation 'org.apache.commons:commons-lang3:3.14.0'
     }
 }

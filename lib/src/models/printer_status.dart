@@ -1,3 +1,5 @@
+import 'zebra_printer_exception.dart';
+
 // ============================================================================
 // ZEBRA PRINTER STATUS - Comprehensive status from Zebra Link-OS SDK
 // ============================================================================
@@ -61,6 +63,9 @@ class ZebraPrinterStatus {
   /// Error message (if any)
   final String? errorMessage;
 
+  /// Typed error when the status could not be read (busy, unreachable, ...)
+  final ZebraPrinterErrorCode? errorCode;
+
   /// Constructor
   ZebraPrinterStatus({
     this.isReadyToPrint = false,
@@ -78,6 +83,7 @@ class ZebraPrinterStatus {
     this.printMode,
     this.address,
     this.errorMessage,
+    this.errorCode,
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
 
@@ -102,6 +108,10 @@ class ZebraPrinterStatus {
       printMode: map['printMode'] as String?,
       address: map['address'] as String?,
       errorMessage: map['error'] as String? ?? map['errorMessage'] as String?,
+      errorCode:
+          map['errorCode'] == null
+              ? null
+              : ZebraPrinterErrorCode.fromValue(map['errorCode'] as String?),
       timestamp:
           map['timestamp'] != null
               ? DateTime.fromMillisecondsSinceEpoch(map['timestamp'] as int)
@@ -110,8 +120,16 @@ class ZebraPrinterStatus {
   }
 
   /// Creates an error status
-  factory ZebraPrinterStatus.error(String message, {String? address}) {
-    return ZebraPrinterStatus(errorMessage: message, address: address);
+  factory ZebraPrinterStatus.error(
+    String message, {
+    String? address,
+    ZebraPrinterErrorCode? errorCode,
+  }) {
+    return ZebraPrinterStatus(
+      errorMessage: message,
+      address: address,
+      errorCode: errorCode,
+    );
   }
 
   /// Creates status indicating printer is disconnected
