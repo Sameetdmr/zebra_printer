@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" font-family="-apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif">
+  <rect width="1200" height="360" rx="16" fill="#ffffff"/>
+  <text x="40" y="52" font-size="26" font-weight="700" fill="#1f2937">How a print works</text>
+  <text x="40" y="82" font-size="16" fill="#4b5563">The printer's Bluetooth link is held only for the highlighted steps, then released for the next device.</text>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#9ca3af"/>
+    </marker>
+  </defs>
+
+  <!-- held region -->
+  <rect x="436" y="112" width="724" height="188" rx="14" fill="#ecfdf5" stroke="#10b981" stroke-dasharray="6 5"/>
+  <text x="798" y="290" font-size="14" fill="#047857" text-anchor="middle" font-weight="600">printer link held</text>
+
+  <!-- boxes -->
+  <g font-size="16" text-anchor="middle">
+    <rect x="40" y="140" width="160" height="110" rx="12" fill="#eff6ff" stroke="#3b82f6"/>
+    <text x="120" y="182" font-weight="700" fill="#1e3a8a">safePrint()</text>
+    <text x="120" y="208" fill="#1f2937">queued in app</text>
+    <text x="120" y="230" fill="#6b7280" font-size="13">FIFO per printer</text>
+
+    <rect x="240" y="140" width="170" height="110" rx="12" fill="#fff7ed" stroke="#f97316"/>
+    <text x="325" y="182" font-weight="700" fill="#9a3412">Connect</text>
+    <text x="325" y="208" fill="#1f2937">busy? wait &amp; retry</text>
+    <text x="325" y="230" fill="#6b7280" font-size="13">back-off + jitter, ≤ 30 s</text>
+
+    <rect x="456" y="140" width="160" height="110" rx="12" fill="#ffffff" stroke="#10b981"/>
+    <text x="536" y="182" font-weight="700" fill="#065f46">Status check</text>
+    <text x="536" y="208" fill="#1f2937">same link</text>
+    <text x="536" y="230" fill="#6b7280" font-size="13">paper · head · ribbon</text>
+
+    <rect x="656" y="140" width="150" height="110" rx="12" fill="#ffffff" stroke="#10b981"/>
+    <text x="731" y="182" font-weight="700" fill="#065f46">Send</text>
+    <text x="731" y="208" fill="#1f2937">ZPL / image</text>
+    <text x="731" y="230" fill="#6b7280" font-size="13">one or many labels</text>
+
+    <rect x="846" y="140" width="140" height="110" rx="12" fill="#ffffff" stroke="#10b981"/>
+    <text x="916" y="182" font-weight="700" fill="#065f46">Drain</text>
+    <text x="916" y="208" fill="#1f2937">400 ms</text>
+    <text x="916" y="230" fill="#6b7280" font-size="13">let data flush</text>
+
+    <rect x="1026" y="140" width="124" height="110" rx="12" fill="#10b981"/>
+    <text x="1088" y="190" font-weight="700" fill="#ffffff">Release</text>
+    <text x="1088" y="216" fill="#ecfdf5">disconnect</text>
+  </g>
+
+  <g stroke="#9ca3af" stroke-width="2.5" marker-end="url(#arrow)">
+    <line x1="202" y1="195" x2="236" y2="195"/>
+    <line x1="412" y1="195" x2="452" y2="195"/>
+    <line x1="618" y1="195" x2="652" y2="195"/>
+    <line x1="808" y1="195" x2="842" y2="195"/>
+    <line x1="988" y1="195" x2="1022" y2="195"/>
+  </g>
+
+  <text x="40" y="335" font-size="14" fill="#6b7280">Errors are typed: printerBusy · printerUnreachable · notPaired · paperOut · headOpen · ribbonOut · printerPaused …</text>
+</svg>

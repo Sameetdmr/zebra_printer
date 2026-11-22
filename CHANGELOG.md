@@ -12,6 +12,7 @@
   - Unknown binary data is rejected with `unsupportedFormat` instead of being sent to the printer.
   - `~DY` files are written as-is on non Link-OS printers (e.g. iMZ).
   - The printer path stays `E:<NAME>` (unchanged).
+- **Documentation**: README rewritten for pub.dev (getting started with runtime permissions, diagrams, error table, shared-printer guide), new `MIGRATION.md`, pub.dev screenshots, Flutter constraint aligned with the Dart SDK (`>=3.29.0`).
 
 ## 0.5.0 - Shared printer core 🤝
 
