@@ -37,7 +37,11 @@ enum BluetoothScanState {
   stopping,
 }
 
-/// Class for managing Bluetooth operations
+/// Generic Bluetooth Classic operations, independent of Zebra printers:
+/// adapter state, bonded devices, discovery (as streams), pairing and a
+/// simple connection with state tracking.
+///
+/// Use `PrinterManager` (Zebra Link-OS SDK) to print on Zebra printers.
 class BluetoothManager {
   /// Singleton instance
   static final BluetoothManager _instance = BluetoothManager._internal();
@@ -358,15 +362,14 @@ class BluetoothManager {
     }
   }
 
-  /// Opens a raw Bluetooth (RFCOMM) socket to a device and **keeps it open**.
+  /// Opens a Bluetooth Classic (RFCOMM / SPP) connection to a device and
+  /// keeps it open until [disconnect] is called. Follow the state with
+  /// [onConnectionStateChanged] / [connectionState].
   ///
-  /// Do not use this for Zebra printers: a printer accepts one Bluetooth link,
-  /// so an open socket here blocks every other device and this app's own
-  /// print jobs. `PrinterManager` connects only for the duration of a job.
-  @Deprecated(
-    'Holds the printer\'s only Bluetooth link. Print with PrinterManager, '
-    'which connects per job. Will be removed in a future release.',
-  )
+  /// **Zebra printers:** do not connect to a printer here before printing.
+  /// A printer accepts a single Bluetooth link, so a connection held here
+  /// blocks `PrinterManager` and every other device. `PrinterManager` opens
+  /// its own connection for each job.
   Future<bool> connect(String address) async {
     _checkDisposed();
     _config.log('connect called for: $address');
@@ -391,8 +394,7 @@ class BluetoothManager {
     }
   }
 
-  /// Closes the socket opened by [connect].
-  @Deprecated('See connect(). Will be removed in a future release.')
+  /// Closes the connection opened by [connect].
   Future<bool> disconnect() async {
     _checkDisposed();
     return _closeRawSocket();

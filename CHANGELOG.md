@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1 - Bluetooth and Zebra as two documented parts 📘
+
+- **`BluetoothManager.connect()` / `disconnect()` are no longer deprecated.** They are a valid feature for apps that use the package for generic Bluetooth (non-Zebra devices). The docs now only warn not to hold this connection to a printer that `PrinterManager` prints to. (The deprecation was added in 0.6.0.)
+- **README**: presents the package as two independent parts with their own guides: Part 1 Bluetooth (`BluetoothManager`: on/off check, paired devices, scanning with streams, pairing, connection state, `BluetoothDevice` model) and Part 2 Zebra printing (`PrinterManager`), plus a "Using both together" section.
+- pub.dev description mentions both parts.
+
 ## 0.6.0 - Bluetooth extensions 🧩
 
 - **Insecure (unbonded) Bluetooth links**: `PrintOptions(insecure: true)` uses `BluetoothConnectionInsecure`, so many devices can print without pairing each one (printer needs `bluetooth.minimum_security_mode` = 1).
