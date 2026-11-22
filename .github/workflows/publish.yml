@@ -1,0 +1,52 @@
+name: Publish to pub.dev
+
+# Publishes the package when a version tag (e.g. v0.6.0) is pushed.
+# Uses pub.dev automated publishing (OIDC): no secrets are stored in the repo.
+# One-time setup on pub.dev: package Admin tab → Automated publishing →
+# enable GitHub Actions, repository "Sameetdmr/zebra_printer",
+# tag pattern "v{{version}}".
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # required for pub.dev OIDC authentication
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Configures the pub.dev OIDC token for this job
+      - name: Setup Dart (pub.dev credentials)
+        uses: dart-lang/setup-dart@v1
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.32.x"
+          channel: "stable"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Check tag matches pubspec version
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          if [ "v$VERSION" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match pubspec version $VERSION"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Dry run
+        run: flutter pub publish --dry-run
+
+      - name: Publish
+        run: flutter pub publish --force
